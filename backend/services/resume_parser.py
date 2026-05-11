@@ -1,10 +1,14 @@
 import fitz  # PyMuPDF
 import json
-import os
-
+from typing import cast
+from pydantic import SecretStr
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from backend.models.schemas import ResumeData
+from backend.utlis.config import DEEPSEEK_API_KEY
+
+
 
 
 def extract_text_from_pdf(pdf_bytes: bytes) -> str:
@@ -12,18 +16,19 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
     doc = fitz.open(stream=pdf_bytes, filetype="pdf")
     text = ""
     for page in doc:
-        text += page.get_text()
+        text += str(page.get_text())
     doc.close()
     return text.strip()
 
 
 async def parse_resume_with_llm(raw_text: str) -> ResumeData:
     """Use Gemini via LangChain to structure raw resume text into JSON."""
-    llm = ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.2,
-    )
+    # llm = ChatGoogleGenerativeAI(
+    #     model="gemini-2.0-flash",
+    #     api_key=os.getenv("GEMINI_API_KEY"),
+    #     temperature=0.2,
+    # )
+    llm  = ChatOpenAI(model="deepseek-chat",temperature=0.2, api_key=SecretStr(DEEPSEEK_API_KEY),base_url=	"https://api.deepseek.com")
 
     prompt = f"""
 You are a resume parser. Extract the following fields from this resume text and return ONLY valid JSON.
@@ -52,7 +57,12 @@ Return this exact JSON structure:
 Return ONLY the JSON object, no markdown, no explanation.
 """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    text = response.content.strip()
+    content = response.content
+    print("llm content",content)
+    if isinstance(content, list):
+        text = "".join(str(item) for item in content).strip()
+    else:
+        text = str(content).strip()
 
     # Strip markdown code fences if present
     if text.startswith("```"):

@@ -1,17 +1,36 @@
 import json
 import os
-
+from pydantic import SecretStr
+from backend.utlis.config import DEEPSEEK_API_KEY
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import HumanMessage
 from backend.models.schemas import ResumeData
 
 
-def _build_llm() -> ChatGoogleGenerativeAI:
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.7,
+def _build_llm() -> ChatOpenAI:
+    # return ChatGoogleGenerativeAI(
+    #     model="gemini-2.0-flash",
+    #     api_key=os.getenv("GEMINI_API_KEY"),
+    #     temperature=0.7,
+    # )
+    return ChatOpenAI(
+        model="deepseek-chat",
+        base_url="https://api.deepseek.com",
+        api_key=SecretStr(DEEPSEEK_API_KEY),
+        temperature=0,
     )
+
+
+def _extract_response_text(response) -> str:
+    content = response.content
+    if isinstance(content, list):
+        if not content:
+            return ""
+        content = content[0]
+    if isinstance(content, dict):
+        return str(content.get("content", "")).strip()
+    return str(content).strip()
 
 
 async def generate_interview_plan(
@@ -64,7 +83,7 @@ Make the questions feel NATURAL and CONVERSATIONAL, not like a formal exam.
 Return ONLY the JSON, no markdown.
 """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    text = response.content.strip()
+    text = _extract_response_text(response)
 
     if text.startswith("```"):
         text = text.split("```")[1]
@@ -93,4 +112,4 @@ Keep it under 400 words. Make it sound like a real company posting.
 Return only the job description text, no extra commentary.
 """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    return response.content.strip()
+    return _extract_response_text(response)

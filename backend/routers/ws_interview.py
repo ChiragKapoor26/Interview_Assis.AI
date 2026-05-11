@@ -1,8 +1,11 @@
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
 from backend.services.gemini_service import stream_agent_response
 from backend.services.tts_service import text_to_speech
+from backend.utlis.config import SUPABASE_SERVICE_ROLE_KEY,SUPABASE_URL
+from pydantic import SecretStr
 import os
 import json
+
 import base64
 from supabase import create_client
 
@@ -10,8 +13,8 @@ router = APIRouter(tags=["websocket"])
 
 
 def get_supabase():
-    url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
+    url =SUPABASE_URL
+    key =SUPABASE_SERVICE_ROLE_KEY
     if not url or not key:
         return None
     return create_client(url, key)
@@ -38,7 +41,7 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
             resume_summary = data.get("resume_summary", "")
             role = data.get("role", role)
             conversation_history = json.loads(data.get("conversation_history", "[]"))
-
+    
     # Send opening message
     opening_line = interview_plan.get(
         "opening_line",

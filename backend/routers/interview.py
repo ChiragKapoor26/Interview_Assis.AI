@@ -15,7 +15,7 @@ router = APIRouter(prefix="/api", tags=["setup"])
 
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
     if not url or not key:
         return None
     return create_client(url, key)
@@ -24,7 +24,7 @@ def get_supabase():
 @router.post("/resume/upload")
 async def upload_resume(file: UploadFile = File(...)):
     """Parse a PDF resume and return structured JSON data."""
-    if not file.filename.endswith(".pdf"):
+    if not file.filename or not file.filename.endswith(".pdf"):
         raise HTTPException(status_code=400, detail="Only PDF files are supported.")
 
     pdf_bytes = await file.read()

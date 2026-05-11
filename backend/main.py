@@ -2,7 +2,6 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 from backend.routers import interview, feedback, ws_interview
-
 load_dotenv()
 
 app = FastAPI(

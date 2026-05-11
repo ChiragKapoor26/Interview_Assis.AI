@@ -10,7 +10,7 @@ router = APIRouter(prefix="/api", tags=["feedback"])
 
 def get_supabase():
     url = os.getenv("SUPABASE_URL")
-    key = os.getenv("SUPABASE_ANON_KEY")
+    key = os.getenv("SUPABASE_SERVICE_ROLE_KEY") or os.getenv("SUPABASE_ANON_KEY")
     if not url or not key:
         return None
     return create_client(url, key)

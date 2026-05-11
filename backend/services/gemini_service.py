@@ -1,10 +1,11 @@
 import os
 import json
 from typing import List, AsyncGenerator
-
+from langchain_openai import ChatOpenAI
 from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
-
+from backend.utlis.config import DEEPSEEK_API_KEY
+from pydantic import SecretStr
 
 PERSONA_SYSTEM_PROMPT = """
 You are Alex, a senior software engineer at a top-tier tech company. You are conducting a real job interview.
@@ -29,17 +30,15 @@ Current Interview State:
 """
 
 
-def _build_llm(streaming: bool = False) -> ChatGoogleGenerativeAI:
+def _build_llm(streaming: bool = False) -> ChatOpenAI:
     """Build the LangChain Gemini LLM instance."""
-    return ChatGoogleGenerativeAI(
-        model="gemini-2.0-flash",
-        api_key=os.getenv("GEMINI_API_KEY"),
-        temperature=0.85,
-        max_output_tokens=256,
+    return ChatOpenAI(
+        model="Deepseek-chat",
+        api_key=SecretStr(DEEPSEEK_API_KEY),
+        temperature=0,
         streaming=streaming,
+        base_url="https://api.deepseek.com"
     )
-
-
 async def stream_agent_response(
     conversation_history: List[dict],
     interview_plan: dict,
@@ -47,7 +46,7 @@ async def stream_agent_response(
     resume_summary: str,
     code_content: str = "",
     user_transcript: str = "",
-) -> AsyncGenerator[str, None]:
+) -> AsyncGenerator[str ,None]:
     """Stream the agent's response token by token."""
     llm = _build_llm(streaming=True)
 
@@ -89,15 +88,18 @@ async def stream_agent_response(
     # Stream response chunks
     async for chunk in llm.astream(messages):
         if chunk.content:
-            yield chunk.content
-
+            if isinstance(chunk.content, str):
+                yield chunk.content
+            else:
+                # If it's a list/multi-modal, convert to string for the stream
+                yield str(chunk.content)
 
 async def generate_feedback_report(
     transcript: List[dict],
     interview_plan: dict,
     role: str,
     resume_summary: str,
-    facial_metrics: dict = None,
+    facial_metrics: dict | None = None,
 ) -> dict:
     """Generate honest, encouraging feedback after the interview ends."""
     llm = _build_llm(streaming=False)
@@ -161,7 +163,12 @@ Return ONLY this JSON (scores are 0-100):
 Return ONLY the JSON, no markdown fences.
 """
     response = await llm.ainvoke([HumanMessage(content=prompt)])
-    text = response.content.strip()
+    content = response.content
+    if isinstance(content, list):
+        content = " ".join(
+            [item if isinstance(item, str) else json.dumps(item) for item in content]
+        )
+    text = str(content).strip()
 
     if text.startswith("```"):
         text = text.split("```")[1]
