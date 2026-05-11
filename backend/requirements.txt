@@ -1,0 +1,10 @@
+fastapi[standard]
+uvicorn[standard]
+python-dotenv
+pydantic
+supabase==2.5.1
+langchain
+langchain-google-genai
+langchain-core
+PyMuPDF
+httpx
