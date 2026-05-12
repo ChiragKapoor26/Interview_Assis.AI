@@ -9,11 +9,6 @@ from backend.models.schemas import ResumeData
 
 
 def _build_llm() -> ChatOpenAI:
-    # return ChatGoogleGenerativeAI(
-    #     model="gemini-2.0-flash",
-    #     api_key=os.getenv("GEMINI_API_KEY"),
-    #     temperature=0.7,
-    # )
     return ChatOpenAI(
         model="deepseek-chat",
         base_url="https://api.deepseek.com",

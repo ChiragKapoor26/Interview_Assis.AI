@@ -23,11 +23,6 @@ def extract_text_from_pdf(pdf_bytes: bytes) -> str:
 
 async def parse_resume_with_llm(raw_text: str) -> ResumeData:
     """Use Gemini via LangChain to structure raw resume text into JSON."""
-    # llm = ChatGoogleGenerativeAI(
-    #     model="gemini-2.0-flash",
-    #     api_key=os.getenv("GEMINI_API_KEY"),
-    #     temperature=0.2,
-    # )
     llm  = ChatOpenAI(model="deepseek-chat",temperature=0.2, api_key=SecretStr(DEEPSEEK_API_KEY),base_url=	"https://api.deepseek.com")
 
     prompt = f"""
