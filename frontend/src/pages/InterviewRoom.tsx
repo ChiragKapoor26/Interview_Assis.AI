@@ -8,17 +8,74 @@ import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Mic, PhoneOff, Code2, VideoOff, MessageSquareQuote, Eye, Smile, Zap, Loader2 } from 'lucide-react'
-import { useFacialAnalysis } from '../hooks/useFacialAnalysis'
+import { useFacialAnalysis } from '../hooks/facialanalysis'
 
 interface Message { role: 'agent' | 'user'; text: string }
 
+interface User {
+  id: string
+}
+
+type Language = 'javascript' | 'typescript' | 'python' | 'java' | 'cpp'
+
+interface MetricBarProps {
+  icon: React.ReactNode
+  label: string
+  value: number
+  color: string
+}
+
+interface FacialMetrics {
+  eyeContact: number
+  smileRatio: number
+  confidence: number
+  faceDetected: boolean
+}
+
+interface FacialHUDProps {
+  metrics: FacialMetrics
+  isReady: boolean
+}
+
+interface InterviewRoomProps {
+  user: User
+}
+
+interface WSMessage {
+  type: string
+  text?: string
+  data?: string
+  question_index?: number
+  is_complete?: boolean
+}
+
+interface FacialMetricLogEntry {
+  eye_contact: number
+  smile_ratio: number
+  confidence: number
+  ts: number
+}
+
+interface BrowserSpeechRecognition {
+  continuous: boolean
+  interimResults: boolean
+  lang: string
+  onstart: (() => void) | null
+  onend: (() => void) | null
+  onerror: ((event: { error?: string }) => void) | null
+  onnomatch: (() => void) | null
+  onresult: ((event: SpeechRecognitionEvent) => void) | null
+  start: () => void
+  stop: () => void
+}
+
+type SpeechRecognitionConstructor = new () => BrowserSpeechRecognition
+
 const PING_INTERVAL_MS = 25_000
-const MAX_RECONNECT    = 3
+const MAX_RECONNECT = 3
 
 /* ─── Metric Bar ─────────────────────────────────────────────── */
-function MetricBar({ icon, label, value, color }: {
-  icon: React.ReactNode; label: string; value: number; color: string
-}) {
+function MetricBar({ icon, label, value, color }: MetricBarProps) {
   return (
     <div className="flex items-center gap-2">
       <span className={`shrink-0 ${color}`}>{icon}</span>
@@ -29,9 +86,8 @@ function MetricBar({ icon, label, value, color }: {
         </div>
         <div className="h-1.5 rounded-full bg-white/5 overflow-hidden">
           <div
-            className={`h-full rounded-full transition-all duration-500 ${
-              value >= 70 ? 'bg-green-500' : value >= 40 ? 'bg-yellow-500' : 'bg-red-500'
-            }`}
+            className={`h-full rounded-full transition-all duration-500 ${value >= 70 ? 'bg-green-500' : value >= 40 ? 'bg-yellow-500' : 'bg-red-500'
+              }`}
             style={{ width: `${value}%` }}
           />
         </div>
@@ -41,10 +97,7 @@ function MetricBar({ icon, label, value, color }: {
 }
 
 /* ─── Facial HUD ─────────────────────────────────────────────── */
-function FacialHUD({ metrics, isReady }: {
-  metrics: { eyeContact: number; smileRatio: number; confidence: number; faceDetected: boolean }
-  isReady: boolean
-}) {
+function FacialHUD({ metrics, isReady }: FacialHUDProps) {
   if (!isReady) return (
     <div className="absolute inset-0 flex items-end justify-center pb-2 pointer-events-none">
       <div className="flex items-center gap-1.5 bg-black/60 backdrop-blur-sm rounded-full px-3 py-1 text-[10px] text-muted-foreground">
@@ -55,17 +108,16 @@ function FacialHUD({ metrics, isReady }: {
   return (
     <>
       <div className="absolute top-2 right-2 pointer-events-none">
-        <div className={`w-3 h-3 rounded-full border-2 ${
-          metrics.faceDetected
+        <div className={`w-3 h-3 rounded-full border-2 ${metrics.faceDetected
             ? 'border-green-400 bg-green-400/30 animate-pulse'
             : 'border-red-400 bg-red-400/20'
-        }`} />
+          }`} />
       </div>
       <div className="absolute bottom-0 left-0 right-0 bg-gradient-to-t from-black/80 to-transparent p-2 pt-4 pointer-events-none">
         <div className="space-y-1.5">
-          <MetricBar icon={<Eye className="w-3 h-3" />}   label="Eye Contact" value={metrics.faceDetected ? metrics.eyeContact : 0}  color="text-blue-400"   />
-          <MetricBar icon={<Smile className="w-3 h-3" />} label="Expression"  value={metrics.faceDetected ? metrics.smileRatio : 0}  color="text-yellow-400" />
-          <MetricBar icon={<Zap className="w-3 h-3" />}   label="Confidence"  value={metrics.faceDetected ? metrics.confidence : 0}  color="text-purple-400" />
+          <MetricBar icon={<Eye className="w-3 h-3" />} label="Eye Contact" value={metrics.faceDetected ? metrics.eyeContact : 0} color="text-blue-400" />
+          <MetricBar icon={<Smile className="w-3 h-3" />} label="Expression" value={metrics.faceDetected ? metrics.smileRatio : 0} color="text-yellow-400" />
+          <MetricBar icon={<Zap className="w-3 h-3" />} label="Confidence" value={metrics.faceDetected ? metrics.confidence : 0} color="text-purple-400" />
         </div>
       </div>
     </>
@@ -73,34 +125,37 @@ function FacialHUD({ metrics, isReady }: {
 }
 
 /* ─── Main Component ─────────────────────────────────────────── */
-export default function InterviewRoom({ user }: { user: any }) {
+export default function InterviewRoom({ user }: InterviewRoomProps) {
   const { id: interviewId } = useParams()
   const navigate = useNavigate()
 
   /* ── Refs ──────────────────────────────────────────────────── */
-  const wsRef             = useRef<WebSocket | null>(null)
-  const pingTimerRef      = useRef<ReturnType<typeof setInterval> | null>(null)
+  const wsRef = useRef<WebSocket | null>(null)
+  const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectCountRef = useRef(0)
-  const intentionalClose  = useRef(false)
-  const audioQueueRef     = useRef<string[]>([])
-  const isPlayingRef      = useRef(false)
-  const audioElRef        = useRef<HTMLAudioElement | null>(null)
-  const videoRef          = useRef<HTMLVideoElement>(null)
-  const recognitionRef    = useRef<any>(null)
-  const transcriptEndRef  = useRef<HTMLDivElement>(null)
-  const facialMetricsLog  = useRef<any[]>([])
+  const intentionalClose = useRef(false)
+  const audioQueueRef = useRef<string[]>([])
+  const isPlayingRef = useRef(false)
+  const agentSpeechFallbackRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const audioElRef = useRef<HTMLAudioElement | null>(null)
+  const videoRef = useRef<HTMLVideoElement | null>(null)
+  const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
+  const transcriptEndRef = useRef<HTMLDivElement | null>(null)
+  const facialMetricsLog = useRef<FacialMetricLogEntry[]>([])
 
   /* ── State ─────────────────────────────────────────────────── */
-  const [messages, setMessages]               = useState<Message[]>([])
-  const [agentText, setAgentText]             = useState('')
+  const [messages, setMessages] = useState<Message[]>([])
+  const [agentText, setAgentText] = useState('')
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false)
-  const [isListening, setIsListening]         = useState(false)
-  const [connected, setConnected]             = useState(false)
-  const [interviewDone, setInterviewDone]     = useState(false)
-  const [questionIndex, setQuestionIndex]     = useState(0)
-  const [code, setCode]                       = useState('// Write your solution here\n\n')
-  const [language, setLanguage]               = useState('javascript')
-  const [cameraOn, setCameraOn]               = useState(false)
+  const [isListening, setIsListening] = useState(false)
+  const [micError, setMicError] = useState('')
+  const [connected, setConnected] = useState(false)
+  const [interviewDone, setInterviewDone] = useState(false)
+  const [questionIndex, setQuestionIndex] = useState(0)
+  const [code, setCode] = useState('// Write your solution here\n\n')
+  const [language, setLanguage] = useState<Language>('javascript')
+  const [cameraOn, setCameraOn] = useState(false)
 
   const { metrics: liveMetrics, isReady: facialReady } = useFacialAnalysis(videoRef, cameraOn)
 
@@ -111,7 +166,7 @@ export default function InterviewRoom({ user }: { user: any }) {
       facialMetricsLog.current.push({
         eye_contact: liveMetrics.eyeContact / 100,
         smile_ratio: liveMetrics.smileRatio / 100,
-        confidence:  liveMetrics.confidence  / 100,
+        confidence: liveMetrics.confidence / 100,
         ts: Date.now(),
       })
     }, 5000)
@@ -123,195 +178,258 @@ export default function InterviewRoom({ user }: { user: any }) {
     transcriptEndRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages])
 
+  const clearAgentSpeechFallback = useCallback(() => {
+    if (agentSpeechFallbackRef.current) {
+      clearTimeout(agentSpeechFallbackRef.current)
+      agentSpeechFallbackRef.current = null
+    }
+  }, [])
+
   /* ── Audio queue ───────────────────────────────────────────── */
-  const playNextAudio = useCallback(() => {
+  const playNextAudio = useCallback(function playNextAudio(): void {
     if (!audioQueueRef.current.length) {
       isPlayingRef.current = false
       setIsAgentSpeaking(false)
       return
     }
     isPlayingRef.current = true
-    const b64  = audioQueueRef.current.shift()!
+    const b64 = audioQueueRef.current.shift()!
     const blob = new Blob([Uint8Array.from(atob(b64), c => c.charCodeAt(0))], { type: 'audio/mpeg' })
-    const url  = URL.createObjectURL(blob)
-    const el   = audioElRef.current
+    const url = URL.createObjectURL(blob)
+    const el = audioElRef.current
     if (!el) { URL.revokeObjectURL(url); playNextAudio(); return }
-    el.src     = url
+    el.src = url
     el.onended = () => { URL.revokeObjectURL(url); playNextAudio() }
     el.onerror = () => { URL.revokeObjectURL(url); playNextAudio() }
     el.play().catch(() => { URL.revokeObjectURL(url); playNextAudio() })
   }, [])
 
-  const enqueueAudio = useCallback((b64: string) => {
+  const enqueueAudio = useCallback((b64: string): void => {
+    clearAgentSpeechFallback()
+    setIsAgentSpeaking(true)
     audioQueueRef.current.push(b64)
     if (!isPlayingRef.current) playNextAudio()
-  }, [playNextAudio])
+  }, [clearAgentSpeechFallback, playNextAudio])
 
-  /* ─────────────────────────────────────────────────────────────
-     WEBSOCKET EFFECT — single self-contained effect.
-
-     Key insight: the local `cancelled` boolean belongs to THIS
-     invocation only. React Strict Mode double-fires effects:
-       Run 1 → cleanup → cancelled=true → ws1 closes harmlessly
-       Run 2 → cancelled=false → ws2 connects and stays open ✅
-
-     Never extracted to useCallback: a callback would capture a
-     stale `cancelled` from a different closure scope.
-  ───────────────────────────────────────────────────────────── */
+  /* ── WebSocket lifecycle ───────────────────────────────────── */
   useEffect(() => {
     if (!interviewId) return
 
-    // Strict Mode / unmount guard — local to this effect invocation
     let cancelled = false
+    const wsBase = API_URL.replace(/^https?/, (protocol: string) => protocol === 'https' ? 'wss' : 'ws')
+    const wsUrl = `${wsBase}/ws/interview/${interviewId}`
 
-    // ── Camera (non-blocking, does not delay WS) ─────────────
+    const clearPing = () => {
+      if (pingTimerRef.current) {
+        clearInterval(pingTimerRef.current)
+        pingTimerRef.current = null
+      }
+    }
+
+    const connect = () => {
+      const ws = new WebSocket(wsUrl)
+      wsRef.current = ws
+
+      ws.onopen = () => {
+        if (cancelled) {
+          ws.close()
+          return
+        }
+
+        reconnectCountRef.current = 0
+        intentionalClose.current = false
+        setConnected(true)
+        clearPing()
+        pingTimerRef.current = setInterval(() => {
+          if (ws.readyState === WebSocket.OPEN) ws.send(JSON.stringify({ type: 'ping' }))
+        }, PING_INTERVAL_MS)
+      }
+
+      ws.onmessage = ({ data }: MessageEvent<string>) => {
+        if (cancelled) return
+
+        try {
+          const msg = JSON.parse(data) as WSMessage
+          switch (msg.type) {
+            case 'pong':
+              break
+            case 'agent_turn':
+              setAgentText(msg.text ?? '')
+              setIsAgentSpeaking(true)
+              clearAgentSpeechFallback()
+              agentSpeechFallbackRef.current = setTimeout(() => {
+                if (!isPlayingRef.current && audioQueueRef.current.length === 0) {
+                  setIsAgentSpeaking(false)
+                }
+              }, 3000)
+              setMessages(prev => [...prev, { role: 'agent', text: msg.text ?? '' }])
+              setQuestionIndex(msg.question_index ?? 0)
+              if (msg.is_complete) setInterviewDone(true)
+              break
+            case 'audio':
+              if (msg.data) enqueueAudio(msg.data)
+              break
+            case 'interview_complete':
+              setInterviewDone(true)
+              break
+            default:
+              console.warn('[WS] Unknown message type:', msg.type)
+          }
+        } catch (err) {
+          console.error('[WS] Parse error:', err)
+        }
+      }
+
+      ws.onerror = () => {
+        if (!cancelled) console.error('[WS] Socket error')
+      }
+
+      ws.onclose = ({ code, reason }) => {
+        if (cancelled) return
+
+        setConnected(false)
+        clearPing()
+        console.warn(`[WS] Closed code=${code} reason="${reason}"`)
+
+        if (!intentionalClose.current && reconnectCountRef.current < MAX_RECONNECT) {
+          reconnectCountRef.current += 1
+          reconnectTimerRef.current = setTimeout(connect, reconnectCountRef.current * 1500)
+        } else if (!intentionalClose.current) {
+          console.error('[WS] Max reconnect attempts reached')
+        }
+      }
+    }
+
+    connect()
+
+    return () => {
+      cancelled = true
+      clearPing()
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current)
+        reconnectTimerRef.current = null
+      }
+      clearAgentSpeechFallback()
+      recognitionRef.current?.stop()
+      if (wsRef.current?.readyState === WebSocket.CONNECTING || wsRef.current?.readyState === WebSocket.OPEN) {
+        wsRef.current.close()
+      }
+      wsRef.current = null
+      setConnected(false)
+    }
+  }, [clearAgentSpeechFallback, enqueueAudio, interviewId])
+
+  /* ── Camera stream for facialanalysis.ts ───────────────────── */
+  const [cameraStream, setCameraStream] = useState<MediaStream | null>(null)
+
+  useEffect(() => {
+    if (!interviewId) return
+
+    let cancelled = false
+    let activeStream: MediaStream | null = null
+
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: false })
       .then(stream => {
-        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
-        if (videoRef.current) { videoRef.current.srcObject = stream; setCameraOn(true) }
+        if (cancelled) {
+          stream.getTracks().forEach(track => track.stop())
+          return
+        }
+
+        activeStream = stream
+        setCameraStream(stream)
+        setCameraOn(true)
       })
-      .catch(() => setCameraOn(false))
+      .catch(err => {
+        console.error('Camera error:', err)
+        setCameraOn(false)
+      })
 
-    // ── Derive WS URL — handles http/https → ws/wss ──────────
-    // e.g. "http://localhost:8000" → "ws://localhost:8000"
-    //      "https://api.myapp.com" → "wss://api.myapp.com"
-    const wsBase = API_URL.replace(/^https?/, m => m === 'https' ? 'wss' : 'ws')
-    const wsUrl  = `${wsBase}/ws/interview/${interviewId}`
-    console.log('[WS] Connecting →', wsUrl)
+    return () => {
+      cancelled = true
+      activeStream?.getTracks().forEach(track => track.stop())
+      setCameraStream(null)
+      setCameraOn(false)
+    }
+  }, [interviewId])
 
-    // ── Create socket ────────────────────────────────────────
-    let ws: WebSocket
-    try {
-      ws = new WebSocket(wsUrl)
-    } catch (err) {
-      console.error('[WS] Could not construct WebSocket:', err)
+  useEffect(() => {
+    const video = videoRef.current
+    if (!cameraStream || !video) return
+
+    video.srcObject = cameraStream
+    video.play().catch(err => {
+      console.error('Video play failed:', err)
+    })
+
+    return () => {
+      if (video.srcObject === cameraStream) video.srcObject = null
+    }
+  }, [cameraStream])
+  /* ── Speech recognition ─────────────────────────────────────── */
+  const startRecognition = useCallback(async () => {
+    if (isListening || interviewDone || !connected) return
+
+    const speechWindow = window as Window & {
+      SpeechRecognition?: SpeechRecognitionConstructor
+      webkitSpeechRecognition?: SpeechRecognitionConstructor
+    }
+    const SR = speechWindow.SpeechRecognition ?? speechWindow.webkitSpeechRecognition
+    if (!SR) {
+      setMicError('Speech recognition is only supported in Chrome or Edge.')
       return
     }
-    wsRef.current = ws
 
-    // ── Handlers ─────────────────────────────────────────────
-    ws.onopen = () => {
-      // Strict Mode cleanup may have fired before the handshake finished.
-      // If so, close this zombie socket immediately and bail.
-      if (cancelled) {
-        console.log('[WS] Cancelled before open — closing zombie socket')
-        ws.close()
-        return
-      }
-      console.log('[WS] Connected ✓')
-      reconnectCountRef.current = 0
-      intentionalClose.current  = false
-      setConnected(true)
-
-      // Keep-alive ping
-      if (pingTimerRef.current) clearInterval(pingTimerRef.current)
-      pingTimerRef.current = setInterval(() => {
-        if (ws.readyState === WebSocket.OPEN) {
-          ws.send(JSON.stringify({ type: 'ping' }))
-        }
-      }, PING_INTERVAL_MS)
+    setMicError('')
+    try {
+      const micStream = await navigator.mediaDevices.getUserMedia({ audio: true })
+      micStream.getTracks().forEach(track => track.stop())
+    } catch (error) {
+      console.error('Microphone permission failed:', error)
+      setMicError('Allow microphone access in your browser, then try again.')
+      return
     }
 
-    ws.onmessage = ({ data }) => {
-      if (cancelled) return
-      try {
-        const msg = JSON.parse(data)
-        switch (msg.type) {
-          case 'pong': break
-
-          case 'agent_turn':
-            setAgentText(msg.text)
-            setIsAgentSpeaking(true)
-            setMessages(prev => [...prev, { role: 'agent', text: msg.text }])
-            setQuestionIndex(msg.question_index ?? 0)
-            if (msg.is_complete) setInterviewDone(true)
-            break
-
-          case 'audio':
-            if (msg.data) enqueueAudio(msg.data)
-            break
-
-          case 'interview_complete':
-            setInterviewDone(true)
-            break
-
-          default:
-            console.warn('[WS] Unknown message type:', msg.type)
-        }
-      } catch (e) {
-        console.error('[WS] Parse error:', e)
-      }
-    }
-
-    ws.onerror = () => {
-      // onclose fires right after onerror — handle reconnect there
-      if (!cancelled) console.error('[WS] Socket error')
-    }
-
-    ws.onclose = ({ code, reason }) => {
-      // If cancelled=true this close was triggered by our own cleanup → ignore
-      if (cancelled) return
-
-      console.warn(`[WS] Closed — code=${code} reason="${reason}"`)
-      setConnected(false)
-      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
-
-      if (!intentionalClose.current && reconnectCountRef.current < MAX_RECONNECT) {
-        reconnectCountRef.current++
-        const delay = reconnectCountRef.current * 1500
-        console.warn(`[WS] Reconnecting in ${delay}ms (${reconnectCountRef.current}/${MAX_RECONNECT})`)
-        setTimeout(() => {
-          if (!cancelled) {
-            // Re-open a fresh socket with the same handlers
-            const ws2 = new WebSocket(wsUrl)
-            wsRef.current = ws2
-            ws2.onopen    = ws.onopen
-            ws2.onmessage = ws.onmessage
-            ws2.onerror   = ws.onerror
-            ws2.onclose   = ws.onclose
-          }
-        }, delay)
-      } else if (!intentionalClose.current) {
-        console.error('[WS] Max reconnect attempts reached')
-      }
-    }
-
-    // ── Cleanup (runs on unmount or before re-run) ───────────
-    return () => {
-      cancelled = true   // ← makes every handler a no-op from this point
-      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
-      recognitionRef.current?.stop()
-      // Close only if still connecting or open (not already closing/closed)
-      if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
-        ws.close()
-      }
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [interviewId])
-  // Only re-run when interview changes. enqueueAudio is referentially stable.
-
-  /* ── Speech recognition ─────────────────────────────────────── */
-  const startRecognition = useCallback(() => {
-    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (!SR) return
     const r = new SR()
-    r.continuous     = false
-    r.interimResults = false
-    r.lang           = 'en-US'
-    r.onstart  = () => setIsListening(true)
-    r.onend    = () => setIsListening(false)
-    r.onerror  = () => setIsListening(false)
-    r.onresult = (e: any) => {
-      const transcript = e.results[0][0].transcript.trim()
-      if (transcript && wsRef.current?.readyState === WebSocket.OPEN) {
+    r.continuous = false
+    r.interimResults = true
+    r.lang = 'en-IN'
+    r.onstart = () => setIsListening(true)
+    r.onend = () => setIsListening(false)
+    r.onerror = (event) => {
+      setIsListening(false)
+      const messageByError: Record<string, string> = {
+        'audio-capture': 'No microphone was found. Check your input device.',
+        'not-allowed': 'Microphone access is blocked. Allow it in browser settings.',
+        'no-speech': 'I could not hear speech. Hold the button and speak clearly.',
+        network: 'Speech recognition needs a working network connection.',
+      }
+      setMicError(messageByError[event.error ?? ''] ?? 'Speech recognition failed. Please try again.')
+    }
+    r.onnomatch = () => setMicError('I heard audio but could not turn it into text. Try speaking a little louder.')
+    r.onresult = (e) => {
+      let transcript = ''
+      for (let i = e.resultIndex; i < e.results.length; i += 1) {
+        transcript += e.results[i][0].transcript
+      }
+
+      transcript = transcript.trim()
+      const lastResult = e.results[e.results.length - 1]
+      if (transcript && lastResult.isFinal && wsRef.current?.readyState === WebSocket.OPEN) {
+        setMicError('')
         setMessages(prev => [...prev, { role: 'user', text: transcript }])
-        wsRef.current!.send(JSON.stringify({ type: 'user_turn', transcript, code_content: code }))
+        wsRef.current.send(JSON.stringify({ type: 'user_turn', transcript, code_content: code }))
       }
     }
-    r.start()
-    recognitionRef.current = r
-  }, [code])
+    try {
+      r.start()
+      recognitionRef.current = r
+    } catch (error) {
+      console.error('Speech recognition failed to start:', error)
+      setIsListening(false)
+      setMicError('Microphone could not start. Please try again.')
+    }
+  }, [code, connected, interviewDone, isListening])
 
   const stopRecognition = useCallback(() => {
     recognitionRef.current?.stop()
@@ -319,14 +437,20 @@ export default function InterviewRoom({ user }: { user: any }) {
   }, [])
 
   /* ── Helpers ────────────────────────────────────────────────── */
-  const summarizeFacialMetrics = () => {
+  interface SummarizedFacialMetrics {
+    eye_contact: string
+    smile_ratio: string
+    confidence: string
+  }
+
+  const summarizeFacialMetrics = (): SummarizedFacialMetrics | null => {
     const log = facialMetricsLog.current
     if (!log.length) return null
-    const avg = (k: string) => log.reduce((s: number, m: any) => s + (m[k] || 0), 0) / log.length
+    const avg = (k: keyof FacialMetricLogEntry) => log.reduce((s: number, m: FacialMetricLogEntry) => s + m[k], 0) / log.length
     return {
       eye_contact: avg('eye_contact').toFixed(2),
       smile_ratio: avg('smile_ratio').toFixed(2),
-      confidence:  avg('confidence').toFixed(2),
+      confidence: avg('confidence').toFixed(2),
     }
   }
 
@@ -338,16 +462,18 @@ export default function InterviewRoom({ user }: { user: any }) {
     }
     try {
       await fetch(`${API_URL}/api/interview/end`, {
-        method:  'POST',
+        method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          interview_id:   interviewId,
-          user_id:        user?.id,
-          transcript:     messages,
+          interview_id: interviewId,
+          user_id: user?.id,
+          transcript: messages,
           facial_metrics: summarizeFacialMetrics(),
         }),
       })
-    } catch {}
+    } catch (error: unknown) {
+      console.log("error", error)
+    }
     navigate('/dashboard')
   }
 
@@ -366,11 +492,10 @@ export default function InterviewRoom({ user }: { user: any }) {
 
         <div className="flex items-center gap-6">
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <span className={`w-2 h-2 rounded-full transition-colors ${
-              connected
+            <span className={`w-2 h-2 rounded-full transition-colors ${connected
                 ? 'bg-green-500 shadow-[0_0_8px_rgba(34,197,94,0.6)] animate-pulse'
                 : 'bg-yellow-500 animate-pulse'
-            }`} />
+              }`} />
             {connected
               ? 'Live'
               : reconnectCountRef.current > 0
@@ -386,11 +511,10 @@ export default function InterviewRoom({ user }: { user: any }) {
           {cameraOn && facialReady && liveMetrics.faceDetected && (
             <div className="hidden md:flex items-center gap-2 text-xs">
               <span className="text-muted-foreground">Confidence</span>
-              <span className={`font-bold tabular-nums ${
-                liveMetrics.confidence >= 70 ? 'text-green-400'
-                : liveMetrics.confidence >= 40 ? 'text-yellow-400'
-                : 'text-red-400'
-              }`}>{liveMetrics.confidence}%</span>
+              <span className={`font-bold tabular-nums ${liveMetrics.confidence >= 70 ? 'text-green-400'
+                  : liveMetrics.confidence >= 40 ? 'text-yellow-400'
+                    : 'text-red-400'
+                }`}>{liveMetrics.confidence}%</span>
             </div>
           )}
         </div>
@@ -446,11 +570,10 @@ export default function InterviewRoom({ user }: { user: any }) {
                   <span className="text-[10px] font-bold text-muted-foreground uppercase tracking-wider">
                     {m.role === 'agent' ? 'Alex' : 'You'}
                   </span>
-                  <div className={`px-3 py-2 rounded-xl text-sm max-w-[90%] ${
-                    m.role === 'agent'
+                  <div className={`px-3 py-2 rounded-xl text-sm max-w-[90%] ${m.role === 'agent'
                       ? 'bg-primary/10 border border-primary/20 text-foreground rounded-tl-none'
                       : 'bg-blue-500/10 border border-blue-500/20 text-foreground rounded-tr-none'
-                  }`}>{m.text}</div>
+                    }`}>{m.text}</div>
                 </div>
               ))}
               <div ref={transcriptEndRef} />
@@ -477,17 +600,22 @@ export default function InterviewRoom({ user }: { user: any }) {
               <Button
                 variant={isListening ? 'destructive' : 'outline'}
                 className={`h-full w-full flex-col gap-2 rounded-xl transition-all ${isListening ? 'animate-pulse ring-2 ring-destructive/50' : ''}`}
-                onMouseDown={startRecognition}
-                onMouseUp={stopRecognition}
-                onTouchStart={startRecognition}
-                onTouchEnd={stopRecognition}
-                disabled={!connected || isAgentSpeaking || interviewDone}
+                onPointerDown={startRecognition}
+                onPointerUp={stopRecognition}
+                onPointerLeave={stopRecognition}
+                onPointerCancel={stopRecognition}
+                disabled={!connected || interviewDone}
               >
                 <Mic className={`w-6 h-6 ${isListening ? '' : 'text-primary'}`} />
                 <span className="whitespace-normal text-xs">
-                  {!connected ? 'Connecting…' : isListening ? 'Listening…' : 'Hold to Speak'}
+                  {!connected ? 'Connecting…' : isAgentSpeaking ? 'Hold to Interrupt' : isListening ? 'Listening…' : 'Hold to Speak'}
                 </span>
               </Button>
+              {micError && (
+                <p className="mt-2 text-[10px] leading-snug text-destructive">
+                  {micError}
+                </p>
+              )}
             </div>
           </div>
         </div>
@@ -499,7 +627,7 @@ export default function InterviewRoom({ user }: { user: any }) {
               <Code2 className="w-4 h-4" /> Code Editor
             </div>
             <div className="w-32">
-              <Select value={language} onValueChange={setLanguage}>
+              <Select value={language} onValueChange={(value) => setLanguage(value as Language)}>
                 <SelectTrigger className="h-8 bg-white/5 border-white/10 text-xs"><SelectValue /></SelectTrigger>
                 <SelectContent>
                   <SelectItem value="javascript">JavaScript</SelectItem>
@@ -546,8 +674,8 @@ export default function InterviewRoom({ user }: { user: any }) {
                 <div className="grid grid-cols-3 gap-3 my-4 text-center">
                   {[
                     { label: 'Eye Contact', value: Math.round(Number(s.eye_contact) * 100), color: 'text-blue-400' },
-                    { label: 'Expression',  value: Math.round(Number(s.smile_ratio)  * 100), color: 'text-yellow-400' },
-                    { label: 'Confidence',  value: Math.round(Number(s.confidence)   * 100), color: 'text-purple-400' },
+                    { label: 'Expression', value: Math.round(Number(s.smile_ratio) * 100), color: 'text-yellow-400' },
+                    { label: 'Confidence', value: Math.round(Number(s.confidence) * 100), color: 'text-purple-400' },
                   ].map(({ label, value, color }) => (
                     <div key={label} className="bg-muted/40 rounded-xl p-3">
                       <div className={`text-2xl font-bold ${color}`}>{value}%</div>

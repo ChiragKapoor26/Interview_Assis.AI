@@ -33,7 +33,7 @@ Current Interview State:
 def _build_llm(streaming: bool = False) -> ChatOpenAI:
     """Build the LangChain Gemini LLM instance."""
     return ChatOpenAI(
-        model="Deepseek-chat",
+        model="deepseek-v4-flash",
         api_key=SecretStr(DEEPSEEK_API_KEY),
         temperature=0,
         streaming=streaming,
