@@ -7,8 +7,13 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
 import { Badge } from '@/components/ui/badge'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
+<<<<<<< HEAD
 import { Mic, PhoneOff, Code2, VideoOff, MessageSquareQuote, Eye, Smile, Zap, Loader2 } from 'lucide-react'
 import { useFacialAnalysis } from '../hooks/facialanalysis'
+=======
+import { Mic, MicOff, PhoneOff, Code2, Video, VideoOff, MessageSquareQuote, Eye, Smile, Zap, Loader2 } from 'lucide-react'
+import { useFacialAnalysis } from '../hooks/useFacialAnalysis'
+>>>>>>> 04147ff (Video Call fixed finally)
 
 interface Message { role: 'agent' | 'user'; text: string }
 
@@ -134,6 +139,7 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
   const pingTimerRef = useRef<ReturnType<typeof setInterval> | null>(null)
   const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const reconnectCountRef = useRef(0)
+<<<<<<< HEAD
   const intentionalClose = useRef(false)
   const audioQueueRef = useRef<string[]>([])
   const isPlayingRef = useRef(false)
@@ -143,11 +149,23 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
   const recognitionRef = useRef<BrowserSpeechRecognition | null>(null)
   const transcriptEndRef = useRef<HTMLDivElement | null>(null)
   const facialMetricsLog = useRef<FacialMetricLogEntry[]>([])
+=======
+  const intentionalClose  = useRef(false)
+  const audioQueueRef     = useRef<string[]>([])
+  const isPlayingRef      = useRef(false)
+  const audioElRef        = useRef<HTMLAudioElement | null>(null)
+  const videoRef          = useRef<HTMLVideoElement>(null)
+  const recognitionRef    = useRef<any>(null)
+  const transcriptEndRef  = useRef<HTMLDivElement>(null)
+  const facialMetricsLog  = useRef<any[]>([])
+  const cameraStreamRef   = useRef<MediaStream | null>(null)
+>>>>>>> 04147ff (Video Call fixed finally)
 
   /* ── State ─────────────────────────────────────────────────── */
   const [messages, setMessages] = useState<Message[]>([])
   const [agentText, setAgentText] = useState('')
   const [isAgentSpeaking, setIsAgentSpeaking] = useState(false)
+<<<<<<< HEAD
   const [isListening, setIsListening] = useState(false)
   const [micError, setMicError] = useState('')
   const [connected, setConnected] = useState(false)
@@ -156,6 +174,16 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
   const [code, setCode] = useState('// Write your solution here\n\n')
   const [language, setLanguage] = useState<Language>('javascript')
   const [cameraOn, setCameraOn] = useState(false)
+=======
+  const [isListening, setIsListening]         = useState(false)
+  const [connected, setConnected]             = useState(false)
+  const [interviewDone, setInterviewDone]     = useState(false)
+  const [questionIndex, setQuestionIndex]     = useState(0)
+  const [code, setCode]                       = useState('// Write your solution here\n\n')
+  const [language, setLanguage]               = useState('javascript')
+  const [cameraOn, setCameraOn]               = useState(false)
+  const [micMuted, setMicMuted]               = useState(false)
+>>>>>>> 04147ff (Video Call fixed finally)
 
   const { metrics: liveMetrics, isReady: facialReady } = useFacialAnalysis(videoRef, cameraOn)
 
@@ -331,6 +359,7 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
     navigator.mediaDevices
       .getUserMedia({ video: true, audio: false })
       .then(stream => {
+<<<<<<< HEAD
         if (cancelled) {
           stream.getTracks().forEach(track => track.stop())
           return
@@ -343,8 +372,14 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
       .catch(err => {
         console.error('Camera error:', err)
         setCameraOn(false)
+=======
+        if (cancelled) { stream.getTracks().forEach(t => t.stop()); return }
+        cameraStreamRef.current = stream
+        if (videoRef.current) { videoRef.current.srcObject = stream; setCameraOn(true) }
+>>>>>>> 04147ff (Video Call fixed finally)
       })
 
+<<<<<<< HEAD
     return () => {
       cancelled = true
       activeStream?.getTracks().forEach(track => track.stop())
@@ -352,6 +387,14 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
       setCameraOn(false)
     }
   }, [interviewId])
+=======
+    // ── Derive WS URL — handles http/https → ws/wss ──────────
+    // e.g. "http://localhost:8000" → "ws://localhost:8000"
+    //      "https://api.myapp.com" → "wss://api.myapp.com"
+    const wsBase = API_URL.replace(/^https?/, (m: string) => m === 'https' ? 'wss' : 'ws')
+    const wsUrl  = `${wsBase}/ws/interview/${interviewId}`
+    console.log('[WS] Connecting →', wsUrl)
+>>>>>>> 04147ff (Video Call fixed finally)
 
   useEffect(() => {
     const video = videoRef.current
@@ -390,6 +433,94 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
       return
     }
 
+<<<<<<< HEAD
+=======
+    ws.onmessage = ({ data }) => {
+      if (cancelled) return
+      try {
+        const msg = JSON.parse(data)
+        switch (msg.type) {
+          case 'pong': break
+
+          case 'agent_turn':
+            setAgentText(msg.text)
+            setIsAgentSpeaking(true)
+            setMessages(prev => [...prev, { role: 'agent', text: msg.text }])
+            setQuestionIndex(msg.question_index ?? 0)
+            if (msg.is_complete) setInterviewDone(true)
+            break
+
+          case 'audio':
+            if (msg.data) enqueueAudio(msg.data)
+            break
+
+          case 'interview_complete':
+            setInterviewDone(true)
+            break
+
+          default:
+            console.warn('[WS] Unknown message type:', msg.type)
+        }
+      } catch (e) {
+        console.error('[WS] Parse error:', e)
+      }
+    }
+
+    ws.onerror = () => {
+      // onclose fires right after onerror — handle reconnect there
+      if (!cancelled) console.error('[WS] Socket error')
+    }
+
+    ws.onclose = ({ code, reason }) => {
+      // If cancelled=true this close was triggered by our own cleanup → ignore
+      if (cancelled) return
+
+      console.warn(`[WS] Closed — code=${code} reason="${reason}"`)
+      setConnected(false)
+      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
+
+      if (!intentionalClose.current && reconnectCountRef.current < MAX_RECONNECT) {
+        reconnectCountRef.current++
+        const delay = reconnectCountRef.current * 1500
+        console.warn(`[WS] Reconnecting in ${delay}ms (${reconnectCountRef.current}/${MAX_RECONNECT})`)
+        setTimeout(() => {
+          if (!cancelled) {
+            // Re-open a fresh socket with the same handlers
+            const ws2 = new WebSocket(wsUrl)
+            wsRef.current = ws2
+            ws2.onopen    = ws.onopen
+            ws2.onmessage = ws.onmessage
+            ws2.onerror   = ws.onerror
+            ws2.onclose   = ws.onclose
+          }
+        }, delay)
+      } else if (!intentionalClose.current) {
+        console.error('[WS] Max reconnect attempts reached')
+      }
+    }
+
+    // ── Cleanup (runs on unmount or before re-run) ───────────
+    return () => {
+      cancelled = true   // ← makes every handler a no-op from this point
+      if (pingTimerRef.current) { clearInterval(pingTimerRef.current); pingTimerRef.current = null }
+      recognitionRef.current?.stop()
+      // Stop camera tracks on unmount
+      cameraStreamRef.current?.getTracks().forEach(t => t.stop())
+      cameraStreamRef.current = null
+      // Close only if still connecting or open (not already closing/closed)
+      if (ws.readyState === WebSocket.CONNECTING || ws.readyState === WebSocket.OPEN) {
+        ws.close()
+      }
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [interviewId])
+  // Only re-run when interview changes. enqueueAudio is referentially stable.
+
+  /* ── Speech recognition ─────────────────────────────────────── */
+  const startRecognition = useCallback(() => {
+    const SR = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    if (!SR) return
+>>>>>>> 04147ff (Video Call fixed finally)
     const r = new SR()
     r.continuous = false
     r.interimResults = true
@@ -435,6 +566,37 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
     recognitionRef.current?.stop()
     setIsListening(false)
   }, [])
+
+  /* ── Camera toggle ──────────────────────────────────────────── */
+  const toggleCamera = useCallback(async () => {
+    if (cameraOn) {
+      // Turn OFF: stop all tracks and clear the video element
+      cameraStreamRef.current?.getTracks().forEach(t => t.stop())
+      cameraStreamRef.current = null
+      if (videoRef.current) videoRef.current.srcObject = null
+      setCameraOn(false)
+    } else {
+      // Turn ON: request stream again
+      try {
+        const stream = await navigator.mediaDevices.getUserMedia({ video: true, audio: false })
+        cameraStreamRef.current = stream
+        if (videoRef.current) videoRef.current.srcObject = stream
+        setCameraOn(true)
+      } catch {
+        setCameraOn(false)
+      }
+    }
+  }, [cameraOn])
+
+  /* ── Mic mute toggle ────────────────────────────────────────── */
+  const toggleMic = useCallback(() => {
+    if (!micMuted) {
+      // Muting — stop any active recognition
+      recognitionRef.current?.stop()
+      setIsListening(false)
+    }
+    setMicMuted(prev => !prev)
+  }, [micMuted])
 
   /* ── Helpers ────────────────────────────────────────────────── */
   interface SummarizedFacialMetrics {
@@ -582,33 +744,90 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
 
           {/* Camera + Mic */}
           <div className="grid grid-cols-2 gap-4">
+
+            {/* Camera card with toggle button */}
             <Card className="overflow-hidden bg-black aspect-[4/3] relative">
-              {cameraOn ? (
-                <>
-                  <video ref={videoRef} autoPlay muted playsInline className="w-full h-full object-cover -scale-x-100" />
-                  <FacialHUD metrics={liveMetrics} isReady={facialReady} />
-                </>
-              ) : (
+              {/* ⚠️ Always keep <video> in the DOM so videoRef is never null
+                  when the async stream arrives. Use CSS to show/hide. */}
+              <video
+                ref={videoRef}
+                autoPlay
+                muted
+                playsInline
+                className={`w-full h-full object-cover -scale-x-100 ${cameraOn ? 'block' : 'hidden'}`}
+              />
+
+              {/* "Camera Off" placeholder — shown when feed is hidden */}
+              {!cameraOn && (
                 <div className="absolute inset-0 flex flex-col items-center justify-center text-muted-foreground">
                   <VideoOff className="w-6 h-6 mb-2 opacity-50" />
                   <span className="text-xs">Camera Off</span>
                 </div>
               )}
+
+              {/* MediaPipe HUD — only meaningful when feed is visible */}
+              {cameraOn && <FacialHUD metrics={liveMetrics} isReady={facialReady} />}
+
+              {/* Camera toggle overlay button */}
+              <button
+                onClick={toggleCamera}
+                title={cameraOn ? 'Turn camera off' : 'Turn camera on'}
+                className={`absolute bottom-2 left-2 z-10 rounded-full p-1.5 transition-all backdrop-blur-sm ${
+                  cameraOn
+                    ? 'bg-green-500/20 border border-green-400/50 text-green-400 hover:bg-red-500/20 hover:border-red-400/50 hover:text-red-400'
+                    : 'bg-red-500/20 border border-red-400/50 text-red-400 hover:bg-green-500/20 hover:border-green-400/50 hover:text-green-400'
+                }`}
+              >
+                {cameraOn
+                  ? <Video className="w-3.5 h-3.5" />
+                  : <VideoOff className="w-3.5 h-3.5" />}
+              </button>
             </Card>
 
-            <div className="flex flex-col justify-center">
+            {/* Mic controls: toggle mute + hold to speak */}
+            <div className="flex flex-col gap-2 justify-center">
+
+              {/* Mute/unmute toggle */}
+              <Button
+                variant={micMuted ? 'destructive' : 'secondary'}
+                size="sm"
+                className="w-full gap-2 text-xs"
+                onClick={toggleMic}
+                disabled={interviewDone}
+              >
+                {micMuted
+                  ? <><MicOff className="w-4 h-4" /> Unmute Mic</>
+                  : <><Mic className="w-4 h-4" /> Mute Mic</>}
+              </Button>
+
+              {/* Hold to speak */}
               <Button
                 variant={isListening ? 'destructive' : 'outline'}
+<<<<<<< HEAD
                 className={`h-full w-full flex-col gap-2 rounded-xl transition-all ${isListening ? 'animate-pulse ring-2 ring-destructive/50' : ''}`}
                 onPointerDown={startRecognition}
                 onPointerUp={stopRecognition}
                 onPointerLeave={stopRecognition}
                 onPointerCancel={stopRecognition}
                 disabled={!connected || interviewDone}
+=======
+                className={`flex-1 flex-col gap-1.5 rounded-xl transition-all py-4 ${
+                  isListening ? 'animate-pulse ring-2 ring-destructive/50' : ''
+                }`}
+                onMouseDown={micMuted ? undefined : startRecognition}
+                onMouseUp={micMuted ? undefined : stopRecognition}
+                onTouchStart={micMuted ? undefined : startRecognition}
+                onTouchEnd={micMuted ? undefined : stopRecognition}
+                disabled={!connected || isAgentSpeaking || interviewDone || micMuted}
+>>>>>>> 04147ff (Video Call fixed finally)
               >
-                <Mic className={`w-6 h-6 ${isListening ? '' : 'text-primary'}`} />
+                <Mic className={`w-5 h-5 ${isListening ? '' : micMuted ? 'opacity-30' : 'text-primary'}`} />
                 <span className="whitespace-normal text-xs">
+<<<<<<< HEAD
                   {!connected ? 'Connecting…' : isAgentSpeaking ? 'Hold to Interrupt' : isListening ? 'Listening…' : 'Hold to Speak'}
+=======
+                  {micMuted ? 'Mic Muted' : !connected ? 'Connecting…' : isListening ? 'Listening…' : 'Hold to Speak'}
+>>>>>>> 04147ff (Video Call fixed finally)
                 </span>
               </Button>
               {micError && (
@@ -617,6 +836,7 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
                 </p>
               )}
             </div>
+
           </div>
         </div>
 
