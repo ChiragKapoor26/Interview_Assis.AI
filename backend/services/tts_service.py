@@ -1,36 +1,38 @@
-import httpx
+import io
 import os
 from typing import Optional
+import edge_tts
 
-
-ELEVENLABS_API_KEY = os.getenv("ELEVENLABS_API_KEY", "")
-VOICE_ID = "EXAVITQu4vr4xnSDxMaL"  # "Sarah" - natural, warm voice
+# "en-US-EmmaMultilingualNeural" or "en-US-AvaNeural" are great choices 
+# for a natural, warm female voice similar to ElevenLabs "Sarah"
+VOICE_ID = os.getenv("EDGE_VOICE_ID", "en-US-EmmaMultilingualNeural")
 
 
 async def text_to_speech(text: str) -> Optional[bytes]:
-    """Convert text to speech using ElevenLabs API. Returns audio bytes."""
-    if not ELEVENLABS_API_KEY:
-        return None  # Fallback: frontend uses Web Speech Synthesis
+    """Convert text to speech using edge-tts. Returns audio bytes."""
+    if not text.strip():
+        return None
 
-    url = f"https://api.elevenlabs.io/v1/text-to-speech/{VOICE_ID}"
-    headers = {
-        "xi-api-key": ELEVENLABS_API_KEY,
-        "Content-Type": "application/json",
-        "Accept": "audio/mpeg",
-    }
-    payload = {
-        "text": text,
-        "model_id": "eleven_turbo_v2",  # Fastest model for low latency
-        "voice_settings": {
-            "stability": 0.5,
-            "similarity_boost": 0.75,
-            "style": 0.3,
-            "use_speaker_boost": True,
-        },
-    }
+    try:
+        # Initialize the edge-tts Communicate object
+        communicate = edge_tts.Communicate(text, VOICE_ID)
+        
+        # Create an in-memory byte buffer to hold the audio data
+        audio_buffer = io.BytesIO()
+        
+        # Iterate over the async stream generator and write chunks to buffer
+        async for chunk in communicate.stream():
+            if chunk.get("type") == "audio":
+                audio_data = chunk.get("data")
+                if audio_data:
+                    audio_buffer.write(audio_data)
+        
+        # Retrieve the complete raw bytes
+        audio_bytes = audio_buffer.getvalue()
+        
+        return audio_bytes if len(audio_bytes) > 0 else None
 
-    async with httpx.AsyncClient(timeout=15.0) as client:
-        response = await client.post(url, json=payload, headers=headers)
-        if response.status_code == 200:
-            return response.content
+    except Exception as e:
+        # Log the error in production as needed
+        print(f"Edge-TTS Error: {e}")
         return None
