@@ -1,11 +1,9 @@
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect, HTTPException
+from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from backend.services.gemini_service import stream_agent_response
 from backend.services.tts_service import text_to_speech
-from backend.utlis.config import SUPABASE_SERVICE_ROLE_KEY,SUPABASE_URL
-from pydantic import SecretStr
+from backend.utlis.config import SUPABASE_SERVICE_ROLE_KEY, SUPABASE_URL
 import os
 import json
-
 import base64
 from supabase import create_client
 
@@ -13,8 +11,8 @@ router = APIRouter(tags=["websocket"])
 
 
 def get_supabase():
-    url =SUPABASE_URL
-    key =SUPABASE_SERVICE_ROLE_KEY
+    url = SUPABASE_URL
+    key = SUPABASE_SERVICE_ROLE_KEY
     if not url or not key:
         return None
     return create_client(url, key)
@@ -41,7 +39,7 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
             resume_summary = data.get("resume_summary", "")
             role = data.get("role", role)
             conversation_history = json.loads(data.get("conversation_history", "[]"))
-    
+
     # Send opening message
     opening_line = interview_plan.get(
         "opening_line",
@@ -53,7 +51,6 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
         "question_index": current_question_index,
     })
 
-    # Generate TTS for opening
     audio_bytes = await text_to_speech(opening_line)
     if audio_bytes:
         audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
@@ -76,13 +73,18 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
                 user_transcript = message.get("transcript", "").strip()
                 code_content = message.get("code_content", "")
 
-                if not user_transcript:
+                # Guard: ignore empty transcripts entirely
+                if not user_transcript or len(user_transcript.split()) < 2:
+                    await websocket.send_json({
+                        "type": "agent_turn",
+                        "text": "Sorry, I didn't quite catch that — could you say that again?",
+                        "question_index": current_question_index,
+                    })
                     continue
 
-                # Append to history
                 conversation_history.append({"role": "user", "text": user_transcript})
 
-                # Get AI response
+                # BUG FIX 1: accumulate all chunks, not just the last one
                 agent_text = ""
                 async for chunk in stream_agent_response(
                     conversation_history=conversation_history,
@@ -92,33 +94,51 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
                     code_content=code_content,
                     user_transcript=user_transcript,
                 ):
-                    agent_text = chunk
+                    agent_text += chunk  # += not =
+
+                # Safety net: if model still returns garbage, replace it
+                agent_text = agent_text.strip()
+                if not agent_text or agent_text in {"?", ".", "...", "!"}:
+                    questions = interview_plan.get("questions", [])
+                    if current_question_index < len(questions):
+                        agent_text = f"That's interesting! So, {questions[current_question_index]['question']}"
+                    else:
+                        agent_text = "Thanks for sharing that! Could you tell me a bit more?"
 
                 conversation_history.append({"role": "agent", "text": agent_text})
-                current_question_index += 1
 
-                # Send text response
+                # BUG FIX 2: only advance the index if the agent actually moved on
+                # We detect this by checking if the next question text appears in the response
+                questions = interview_plan.get("questions", [])
+                advanced = False
+                if current_question_index < len(questions):
+                    next_q_keywords = questions[current_question_index]["question"].split()[:4]
+                    # If at least 2 keywords from the next question appear in the response,
+                    # the agent has transitioned — advance the index
+                    matches = sum(1 for w in next_q_keywords if w.lower() in agent_text.lower())
+                    if matches >= 2:
+                        current_question_index += 1
+                        advanced = True
+
                 await websocket.send_json({
                     "type": "agent_turn",
                     "text": agent_text,
                     "question_index": current_question_index,
-                    "is_complete": current_question_index >= len(interview_plan.get("questions", [])),
+                    "is_complete": current_question_index >= len(questions),
                 })
 
-                # Generate and send TTS audio
                 audio_bytes = await text_to_speech(agent_text)
                 if audio_bytes:
                     audio_b64 = base64.b64encode(audio_bytes).decode("utf-8")
                     await websocket.send_json({"type": "audio", "data": audio_b64})
 
-                # Persist conversation to DB every 3 turns
+                # Persist every 3 agent turns
                 if len(conversation_history) % 6 == 0 and supabase:
                     supabase.table("interviews").update({
                         "conversation_history": json.dumps(conversation_history[-30:])
                     }).eq("id", interview_id).execute()
 
     except WebSocketDisconnect:
-        # Save final conversation on disconnect
         if supabase and conversation_history:
             supabase.table("interviews").update({
                 "conversation_history": json.dumps(conversation_history)

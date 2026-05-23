@@ -2,7 +2,6 @@ import os
 import json
 from typing import List, AsyncGenerator
 from langchain_openai import ChatOpenAI
-from langchain_google_genai import ChatGoogleGenerativeAI
 from langchain_core.messages import SystemMessage, HumanMessage, AIMessage
 from backend.utlis.config import DEEPSEEK_API_KEY
 from pydantic import SecretStr
@@ -21,6 +20,9 @@ STRICT RULES — follow these at all times:
 8. If the candidate says something interesting, acknowledge it briefly before moving on.
 9. Your tone: Professional but warm. Like a brilliant colleague, not a professor grading an exam.
 10. When the candidate shares code, refer to it naturally: "I see you're going with a recursive approach there..."
+11. CRITICAL: Never respond with just "?" or a single punctuation mark. Always give a meaningful, human response.
+12. CRITICAL: If the candidate's answer is vague or short, gently probe deeper with a follow-up. Do NOT jump to the next topic yet.
+13. CRITICAL: Only move to the next question when you see [ADVANCE TO NEXT QUESTION] in your instructions.
 
 Current Interview State:
 - Persona: Alex (Senior Engineer, 8 years experience)
@@ -29,16 +31,52 @@ Current Interview State:
 - Resume Summary: {resume_summary}
 """
 
+RESPONSE_EVALUATOR_PROMPT = """
+You are evaluating whether a candidate's interview answer is sufficient to move on to the next question.
+
+Question asked: {question}
+Candidate's answer: {answer}
+
+Rules:
+- If the answer is a complete sentence or more and addresses the question even partially → ADVANCE
+- If the answer is very short (under 8 words), vague, or off-topic → FOLLOW_UP
+- If the answer is just filler like "um", "uh", "I don't know", "?" → FOLLOW_UP
+
+Respond with ONLY one word: ADVANCE or FOLLOW_UP
+"""
+
 
 def _build_llm(streaming: bool = False) -> ChatOpenAI:
-    """Build the LangChain Gemini LLM instance."""
+    """Build the LangChain DeepSeek LLM instance."""
     return ChatOpenAI(
-        model="deepseek-v4-flash",
+        model="deepseek-chat",
         api_key=SecretStr(DEEPSEEK_API_KEY),
-        temperature=0,
+        temperature=0.4,
         streaming=streaming,
         base_url="https://api.deepseek.com"
     )
+
+
+async def _should_advance(
+    current_question: dict,
+    candidate_answer: str,
+) -> bool:
+    """Use a fast LLM call to decide whether the candidate's answer warrants advancing."""
+    # Short-circuit: if answer is too short, don't even call the LLM
+    word_count = len(candidate_answer.strip().split())
+    if word_count < 8:
+        return False
+
+    llm = _build_llm(streaming=False)
+    prompt = RESPONSE_EVALUATOR_PROMPT.format(
+        question=current_question.get("question", ""),
+        answer=candidate_answer,
+    )
+    response = await llm.ainvoke([HumanMessage(content=prompt)])
+    decision = str(response.content).strip().upper()
+    return decision == "ADVANCE"
+
+
 async def stream_agent_response(
     conversation_history: List[dict],
     interview_plan: dict,
@@ -46,7 +84,7 @@ async def stream_agent_response(
     resume_summary: str,
     code_content: str = "",
     user_transcript: str = "",
-) -> AsyncGenerator[str ,None]:
+) -> AsyncGenerator[str, None]:
     """Stream the agent's response token by token."""
     llm = _build_llm(streaming=True)
 
@@ -56,16 +94,42 @@ async def stream_agent_response(
         resume_summary=resume_summary,
     )
 
-    # Determine if we should advance to next question
-    next_question = None
-    if current_question_index < len(interview_plan.get("questions", [])):
-        next_question = interview_plan["questions"][current_question_index]
+    questions = interview_plan.get("questions", [])
 
+    # Determine the current question being discussed (the one just asked)
+    # current_question_index points to the NEXT question to ask,
+    # so the question the candidate just answered is index - 1
+    just_answered_question = None
+    if current_question_index > 0 and (current_question_index - 1) < len(questions):
+        just_answered_question = questions[current_question_index - 1]
+
+    next_question = None
+    if current_question_index < len(questions):
+        next_question = questions[current_question_index]
+
+    # Decide whether the candidate's answer is good enough to advance
+    should_advance = False
+    if just_answered_question and user_transcript.strip():
+        should_advance = await _should_advance(just_answered_question, user_transcript)
+    elif not just_answered_question:
+        # First message — always advance (ask the first question)
+        should_advance = True
+
+    # Build the context injection based on the decision
     context_injection = ""
-    if next_question:
+    if should_advance and next_question:
         context_injection = (
-            f"\n\n[INSTRUCTION: After acknowledging the candidate's response, naturally transition to ask "
-            f"this next question: '{next_question['question']}'. Be smooth and conversational, don't just bluntly ask it.]"
+            f"\n\n[ADVANCE TO NEXT QUESTION] After briefly acknowledging the candidate's response "
+            f"(1 sentence max), naturally transition to ask: '{next_question['question']}'. "
+            f"Be smooth and conversational."
+        )
+    elif not should_advance and just_answered_question:
+        context_injection = (
+            f"\n\n[FOLLOW UP] The candidate's answer was too brief or unclear. "
+            f"Do NOT move to the next question yet. Instead, gently probe deeper on: "
+            f"'{just_answered_question['question']}'. "
+            f"Ask a natural follow-up like 'Could you walk me through that a bit more?' "
+            f"or 'Interesting — what made you choose that approach?'"
         )
 
     final_system = system_prompt + context_injection
@@ -91,8 +155,8 @@ async def stream_agent_response(
             if isinstance(chunk.content, str):
                 yield chunk.content
             else:
-                # If it's a list/multi-modal, convert to string for the stream
                 yield str(chunk.content)
+
 
 async def generate_feedback_report(
     transcript: List[dict],
