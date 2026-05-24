@@ -122,7 +122,8 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
                     "type": "agent_turn",
                     "text": agent_text,
                     "question_index": current_question_index,
-                    "is_complete": current_question_index >= len(questions) and len(questions)>0,
+                    # BUG FIX 2: Wait until the turn AFTER the last question was asked to end the interview
+                    "is_complete": current_question_index >= len(questions) and not advanced and len(questions) > 0,
                 })
 
                 audio_bytes = await text_to_speech(agent_text)

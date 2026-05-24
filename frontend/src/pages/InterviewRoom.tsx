@@ -512,17 +512,19 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
     });
 
     if (!response.ok) {
-      throw new Error("Failed to compile interview report");
+      throw new Error(`Server returned ${response.status}`);
     }
 
     // Explicitly wait until database transaction successfully confirms
     await response.json(); 
 
+    // Redirect to dashboard (using hard redirect to ensure it doesn't fail due to React Router state)
+    window.location.href = '/dashboard';
   } catch (error) {
     console.error("Error finalizing report processing:", error);
-  } finally {
+    alert("Feedback generation took too long or encountered an error, but it may still appear on your dashboard.");
     setIsEnding(false);
-    navigate('/dashboard'); // Now it's safe to go to the dashboard
+    window.location.href = '/dashboard';
   }
 };
 
