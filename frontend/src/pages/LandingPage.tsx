@@ -1,11 +1,103 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { supabase } from '../lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
-import { CheckCircle, Code, User, Play, BarChart3, LineChart, FileText, BrainCircuit, Video, Award, ChevronDown } from 'lucide-react'
+import {
+  CheckCircle, Code, User, Play, BarChart3, LineChart,
+  FileText, BrainCircuit, Video, Award, ChevronDown
+} from 'lucide-react'
 
+/* ─── Scroll-reveal hook ─────────────────────────────────────────── */
+function useScrollReveal(threshold = 0.15) {
+  const ref = useRef<HTMLDivElement>(null)
+  const [visible, setVisible] = useState(false)
+
+  useEffect(() => {
+    const el = ref.current
+    if (!el) return
+    const observer = new IntersectionObserver(
+      ([entry]) => { if (entry.isIntersecting) { setVisible(true); observer.disconnect() } },
+      { threshold }
+    )
+    observer.observe(el)
+    return () => observer.disconnect()
+  }, [threshold])
+
+  return { ref, visible }
+}
+
+/* ─── 3-D tilt card ──────────────────────────────────────────────── */
+function TiltCard({
+  children,
+  className = '',
+}: {
+  children: React.ReactNode
+  className?: string
+}) {
+  const cardRef = useRef<HTMLDivElement>(null)
+  const glowRef = useRef<HTMLDivElement>(null)
+
+  const handleMouseMove = useCallback((e: React.MouseEvent<HTMLDivElement>) => {
+    const card = cardRef.current
+    const glow = glowRef.current
+    if (!card || !glow) return
+
+    const rect = card.getBoundingClientRect()
+    const x = e.clientX - rect.left   // px from left
+    const y = e.clientY - rect.top    // px from top
+    const cx = rect.width / 2
+    const cy = rect.height / 2
+
+    const rotateX = ((y - cy) / cy) * -10   // max ±10 deg
+    const rotateY = ((x - cx) / cx) * 10
+
+    card.style.transform = `perspective(800px) rotateX(${rotateX}deg) rotateY(${rotateY}deg) translateZ(10px) scale(1.03)`
+    glow.style.background = `radial-gradient(circle at ${x}px ${y}px, rgba(139,92,246,0.25) 0%, transparent 70%)`
+    glow.style.opacity = '1'
+  }, [])
+
+  const handleMouseLeave = useCallback(() => {
+    const card = cardRef.current
+    const glow = glowRef.current
+    if (!card || !glow) return
+    card.style.transform = 'perspective(800px) rotateX(0deg) rotateY(0deg) translateZ(0px) scale(1)'
+    glow.style.opacity = '0'
+  }, [])
+
+  return (
+    <div
+      ref={cardRef}
+      onMouseMove={handleMouseMove}
+      onMouseLeave={handleMouseLeave}
+      className={className}
+      style={{
+        transition: 'transform 0.15s ease-out',
+        willChange: 'transform',
+        transformStyle: 'preserve-3d',
+        position: 'relative',
+      }}
+    >
+      {/* mouse-tracking glow layer */}
+      <div
+        ref={glowRef}
+        style={{
+          position: 'absolute',
+          inset: 0,
+          borderRadius: 'inherit',
+          opacity: 0,
+          transition: 'opacity 0.2s ease',
+          pointerEvents: 'none',
+          zIndex: 1,
+        }}
+      />
+      {children}
+    </div>
+  )
+}
+
+/* ─── Data ───────────────────────────────────────────────────────── */
 const features = [
   { icon: <User className="h-6 w-6 text-purple-400" />, title: 'Real-Time AI Interviewer', desc: 'Alex, your AI interviewer, speaks naturally and adapts to your answers just like a real senior engineer would.', color: 'border-purple-500/50' },
   { icon: <CheckCircle className="h-6 w-6 text-blue-400" />, title: 'Resume-Driven', desc: 'Every interview is personalized. Alex reads your resume deeply and asks questions specific to your experience.', color: 'border-blue-500/50' },
@@ -24,11 +116,15 @@ const faqs = [
   { q: "How is the final interview score calculated?", a: "Your final score is a weighted average of three main pillars: Technical Accuracy (your code and problem-solving), Communication (clarity of your transcripts), and Confidence (tracked via facial metrics like eye contact)." }
 ]
 
-function FAQItem({ question, answer }: { question: string, answer: string }) {
+/* ─── Sub-components ─────────────────────────────────────────────── */
+function FAQItem({ question, answer }: { question: string; answer: string }) {
   const [isOpen, setIsOpen] = useState(false)
   return (
     <div className="border border-border/50 bg-card rounded-lg overflow-hidden transition-all duration-200">
-      <button onClick={() => setIsOpen(!isOpen)} className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-muted/50 transition-colors">
+      <button
+        onClick={() => setIsOpen(!isOpen)}
+        className="w-full px-6 py-4 flex items-center justify-between text-left hover:bg-muted/50 transition-colors"
+      >
         <span className="font-semibold">{question}</span>
         <ChevronDown className={`w-5 h-5 text-muted-foreground transition-transform duration-200 ${isOpen ? 'rotate-180' : ''}`} />
       </button>
@@ -41,11 +137,39 @@ function FAQItem({ question, answer }: { question: string, answer: string }) {
   )
 }
 
+/* ─── Reveal wrapper ─────────────────────────────────────────────── */
+function Reveal({
+  children,
+  delay = 0,
+  className = '',
+}: {
+  children: React.ReactNode
+  delay?: number
+  className?: string
+}) {
+  const { ref, visible } = useScrollReveal()
+  return (
+    <div
+      ref={ref}
+      className={className}
+      style={{
+        opacity: visible ? 1 : 0,
+        transform: visible ? 'translateY(0px)' : 'translateY(40px)',
+        transition: `opacity 0.65s ease ${delay}ms, transform 0.65s ease ${delay}ms`,
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/* ─── Page ───────────────────────────────────────────────────────── */
 export default function LandingPage({ user }: { user: any }) {
   const navigate = useNavigate()
 
   return (
     <div className="min-h-screen bg-background">
+      {/* ── Nav ── */}
       <nav className="fixed top-0 w-full z-50 border-b bg-background/80 backdrop-blur-md">
         <div className="container mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2 font-bold text-xl tracking-tight">
@@ -69,60 +193,80 @@ export default function LandingPage({ user }: { user: any }) {
       </nav>
 
       <main className="pt-32 pb-16">
-        {/* Hero */}
+
+        {/* ── Hero ── */}
         <section className="container mx-auto px-4 text-center max-w-4xl mb-32 relative">
           <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-primary/20 blur-[100px] rounded-full pointer-events-none -z-10" />
-          
-          <Badge variant="secondary" className="mb-6 py-1.5 px-4 rounded-full border-primary/20">
-            <span className="w-2 h-2 rounded-full bg-primary mr-2 animate-pulse" />
-            AI-Powered · Real-Time · Humanized
-          </Badge>
-          
-          <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
-            Ace Your Next Interview <br className="hidden md:block"/>
-            <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">with an AI That Feels Real</span>
-          </h1>
-          
-          <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
-            Practice with Alex — an AI interviewer that speaks like a human, reads your resume, watches your confidence, and gives you brutally honest feedback.
-          </p>
-          
-          <div className="flex justify-center gap-4">
+
+          {/* Hero items animate in on mount with staggered delays */}
+          <div
+            style={{
+              opacity: 1,
+              animation: 'heroFadeUp 0.7s ease 0.1s both',
+            }}
+          >
+            <Badge variant="secondary" className="mb-6 py-1.5 px-4 rounded-full border-primary/20">
+              <span className="w-2 h-2 rounded-full bg-primary mr-2 animate-pulse" />
+              AI-Powered · Real-Time · Humanized
+            </Badge>
+          </div>
+
+          <div style={{ animation: 'heroFadeUp 0.7s ease 0.25s both' }}>
+            <h1 className="text-5xl md:text-7xl font-extrabold tracking-tight mb-6">
+              Ace Your Next Interview <br className="hidden md:block" />
+              <span className="text-transparent bg-clip-text bg-gradient-to-r from-purple-400 to-primary">
+                with an AI That Feels Real
+              </span>
+            </h1>
+          </div>
+
+          <div style={{ animation: 'heroFadeUp 0.7s ease 0.4s both' }}>
+            <p className="text-xl text-muted-foreground mb-10 max-w-2xl mx-auto">
+              Practice with Alex — an AI interviewer that speaks like a human, reads your resume, watches your confidence, and gives you brutally honest feedback.
+            </p>
+          </div>
+
+          <div style={{ animation: 'heroFadeUp 0.7s ease 0.55s both' }} className="flex justify-center gap-4">
             <Button size="lg" className="h-14 px-8 text-lg" onClick={() => navigate(user ? '/setup' : '/auth')}>
               {user ? 'Start Your Interview' : 'Start for Free'} 🚀
             </Button>
           </div>
         </section>
 
-        {/* Features */}
+        {/* ── Features ── */}
         <section className="container mx-auto px-4 mb-32">
-          <div className="text-center mb-16">
+          <Reveal className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">Everything You Need to Land the Job</h2>
             <p className="text-muted-foreground">Complete interview preparation that goes beyond just questions.</p>
-          </div>
-          
+          </Reveal>
+
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
             {features.map((f, i) => (
-              <Card key={i} className={`bg-card/50 backdrop-blur-sm border-t-2 ${f.color}`}>
-                <CardContent className="pt-6">
-                  <div className="mb-4 p-3 bg-background/50 rounded-lg inline-block">{f.icon}</div>
-                  <h3 className="text-xl font-semibold mb-2">{f.title}</h3>
-                  <p className="text-muted-foreground leading-relaxed">{f.desc}</p>
-                </CardContent>
-              </Card>
+              <Reveal key={i} delay={i * 80}>
+                <TiltCard className="h-full">
+                  <Card className={`bg-card/50 backdrop-blur-sm border-t-2 ${f.color} h-full`}>
+                    <CardContent className="pt-6">
+                      <div className="mb-4 p-3 bg-background/50 rounded-lg inline-block">{f.icon}</div>
+                      <h3 className="text-xl font-semibold mb-2">{f.title}</h3>
+                      <p className="text-muted-foreground leading-relaxed">{f.desc}</p>
+                    </CardContent>
+                  </Card>
+                </TiltCard>
+              </Reveal>
             ))}
           </div>
         </section>
 
-        {/* How It Works (Procedure) */}
+        {/* ── How It Works ── */}
         <section className="container mx-auto px-4 mb-32 relative">
-          <div className="text-center mb-16">
+          <Reveal className="text-center mb-16">
             <h2 className="text-3xl font-bold mb-4">How It Works</h2>
-            <p className="text-muted-foreground max-w-2xl mx-auto">From uploading your resume to getting your final score, the process is seamless and designed to mirror a real interview.</p>
-          </div>
+            <p className="text-muted-foreground max-w-2xl mx-auto">
+              From uploading your resume to getting your final score, the process is seamless and designed to mirror a real interview.
+            </p>
+          </Reveal>
 
           <div className="max-w-5xl mx-auto relative">
-            {/* Connecting Line (Hidden on mobile) */}
             <div className="hidden md:block absolute top-1/2 left-0 w-full h-0.5 bg-gradient-to-r from-primary/10 via-primary/50 to-primary/10 -translate-y-1/2 z-0" />
 
             <div className="grid grid-cols-1 md:grid-cols-4 gap-8 relative z-10">
@@ -130,38 +274,42 @@ export default function LandingPage({ user }: { user: any }) {
                 { step: '01', icon: <FileText className="w-8 h-8 text-primary" />, title: 'Upload Resume', desc: 'Provide your PDF resume and target job description to set the context.' },
                 { step: '02', icon: <BrainCircuit className="w-8 h-8 text-primary" />, title: 'AI Analysis', desc: 'Our engine instantly parses your data to generate targeted, role-specific questions.' },
                 { step: '03', icon: <Video className="w-8 h-8 text-primary" />, title: 'Live Interview', desc: 'Turn on your mic and camera. Code, speak, and interact with Alex in real-time.' },
-                { step: '04', icon: <Award className="w-8 h-8 text-primary" />, title: 'Get Feedback', desc: 'Receive detailed scoring on technical accuracy, communication, and confidence.' }
+                { step: '04', icon: <Award className="w-8 h-8 text-primary" />, title: 'Get Feedback', desc: 'Receive detailed scoring on technical accuracy, communication, and confidence.' },
               ].map((item, i) => (
-                <div key={i} className="flex flex-col items-center text-center relative group">
-                  <div className="w-20 h-20 rounded-2xl bg-card border shadow-lg flex items-center justify-center mb-6 relative overflow-hidden transition-transform group-hover:-translate-y-2">
-                    <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
-                    {item.icon}
+                <Reveal key={i} delay={i * 100}>
+                  <div className="flex flex-col items-center text-center relative group">
+                    <div className="w-20 h-20 rounded-2xl bg-card border shadow-lg flex items-center justify-center mb-6 relative overflow-hidden transition-transform group-hover:-translate-y-2">
+                      <div className="absolute inset-0 bg-primary/10 opacity-0 group-hover:opacity-100 transition-opacity" />
+                      {item.icon}
+                    </div>
+                    <Badge variant="secondary" className="mb-3">{item.step}</Badge>
+                    <h3 className="text-lg font-bold mb-2">{item.title}</h3>
+                    <p className="text-sm text-muted-foreground">{item.desc}</p>
                   </div>
-                  <Badge variant="secondary" className="mb-3">{item.step}</Badge>
-                  <h3 className="text-lg font-bold mb-2">{item.title}</h3>
-                  <p className="text-sm text-muted-foreground">{item.desc}</p>
-                </div>
+                </Reveal>
               ))}
             </div>
           </div>
-          
-          <div className="mt-20 text-center">
-             <Button size="lg" className="rounded-full px-8" onClick={() => navigate(user ? '/setup' : '/auth')}>
-               Try It Now
-             </Button>
-          </div>
+
+          <Reveal className="mt-20 text-center" delay={200}>
+            <Button size="lg" className="rounded-full px-8" onClick={() => navigate(user ? '/setup' : '/auth')}>
+              Try It Now
+            </Button>
+          </Reveal>
         </section>
 
-        {/* FAQs */}
+        {/* ── FAQs ── */}
         <section className="container mx-auto px-4 mb-32 max-w-3xl">
-          <div className="text-center mb-12">
+          <Reveal className="text-center mb-12">
             <h2 className="text-3xl font-bold mb-4">Frequently Asked Questions</h2>
             <p className="text-muted-foreground">Everything you need to know about InterviewAI.</p>
-          </div>
-          
+          </Reveal>
+
           <div className="space-y-4">
             {faqs.map((faq, i) => (
-              <FAQItem key={i} question={faq.q} answer={faq.a} />
+              <Reveal key={i} delay={i * 60}>
+                <FAQItem question={faq.q} answer={faq.a} />
+              </Reveal>
             ))}
           </div>
         </section>
@@ -170,6 +318,14 @@ export default function LandingPage({ user }: { user: any }) {
       <footer className="border-t py-8 text-center text-muted-foreground">
         <p>© 2025 InterviewAI. Built to help you grow.</p>
       </footer>
+
+      {/* ── Global keyframes ── */}
+      <style>{`
+        @keyframes heroFadeUp {
+          from { opacity: 0; transform: translateY(30px); }
+          to   { opacity: 1; transform: translateY(0); }
+        }
+      `}</style>
     </div>
   )
 }

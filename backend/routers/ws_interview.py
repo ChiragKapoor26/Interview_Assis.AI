@@ -106,8 +106,6 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
                         agent_text = "Thanks for sharing that! Could you tell me a bit more?"
 
                 conversation_history.append({"role": "agent", "text": agent_text})
-
-                # BUG FIX 2: only advance the index if the agent actually moved on
                 # We detect this by checking if the next question text appears in the response
                 questions = interview_plan.get("questions", [])
                 advanced = False
@@ -124,7 +122,7 @@ async def interview_websocket(websocket: WebSocket, interview_id: str):
                     "type": "agent_turn",
                     "text": agent_text,
                     "question_index": current_question_index,
-                    "is_complete": current_question_index >= len(questions),
+                    "is_complete": current_question_index >= len(questions) and len(questions)>0,
                 })
 
                 audio_bytes = await text_to_speech(agent_text)

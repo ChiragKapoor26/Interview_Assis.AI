@@ -160,6 +160,7 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
   const [micMuted, setMicMuted] = useState(false)
 
   const { metrics: liveMetrics, isReady: facialReady } = useFacialAnalysis(videoRef, cameraOn)
+  const [isEnding, setIsEnding] = useState(false);
 
   /* ── Facial snapshot every 5 s ─────────────────────────────── */
   useEffect(() => {
@@ -488,27 +489,42 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
   }
 
   const handleEndInterview = async () => {
-    intentionalClose.current = true
-    if (wsRef.current?.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'end_interview' }))
-      wsRef.current.close()
-    }
-    try {
-      await fetch(`${API_URL}/api/interview/end`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          interview_id: interviewId,
-          user_id: user?.id,
-          transcript: messages,
-          facial_metrics: summarizeFacialMetrics(),
-        }),
-      })
-    } catch (error: unknown) {
-      console.log("error", error)
-    }
-    navigate('/dashboard')
+  intentionalClose.current = true;
+  setIsEnding(true); // Show a loader
+
+  // 1. Notify WebSocket and close gracefully
+  if (wsRef.current?.readyState === WebSocket.OPEN) {
+    wsRef.current.send(JSON.stringify({ type: 'end_interview' }));
+    wsRef.current.close();
   }
+
+  try {
+    // 2. Await the full HTTP response from the AI evaluation engine
+    const response = await fetch(`${API_URL}/api/interview/end`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        interview_id: interviewId,
+        user_id: user?.id,
+        transcript: messages,
+        facial_metrics: summarizeFacialMetrics(),
+      }),
+    });
+
+    if (!response.ok) {
+      throw new Error("Failed to compile interview report");
+    }
+
+    // Explicitly wait until database transaction successfully confirms
+    await response.json(); 
+
+  } catch (error) {
+    console.error("Error finalizing report processing:", error);
+  } finally {
+    setIsEnding(false);
+    navigate('/dashboard'); // Now it's safe to go to the dashboard
+  }
+};
 
   const progress = Math.min(100, (questionIndex / 10) * 100)
 
@@ -552,9 +568,20 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
           )}
         </div>
 
-        <Button variant="destructive" size="sm" onClick={handleEndInterview} className="font-semibold">
-          <PhoneOff className="w-4 h-4 mr-2" /> End
-        </Button>
+        <Button 
+  variant="destructive" 
+  size="sm" 
+  onClick={handleEndInterview} 
+  disabled={isEnding} 
+  className="font-semibold"
+>
+  {isEnding ? (
+    <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+  ) : (
+    <PhoneOff className="w-4 h-4 mr-2" />
+  )}
+  {isEnding ? 'Analyzing...' : 'End'}
+</Button>
       </header>
 
       {/* ── Main Grid ───────────────────────────────────────── */}
@@ -765,9 +792,21 @@ export default function InterviewRoom({ user }: InterviewRoomProps) {
             <p className="text-muted-foreground mb-8">
               Great job! Alex is generating your personalized feedback report.
             </p>
-            <Button className="w-full" size="lg" onClick={() => navigate('/dashboard')}>
-              View My Feedback →
-            </Button>
+            <Button 
+  className="w-full" 
+  size="lg" 
+  onClick={handleEndInterview} 
+  disabled={isEnding}
+>
+  {isEnding ? (
+    <>
+      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+      Compiling Feedback Report...
+    </>
+  ) : (
+    'View My Feedback →'
+  )}
+</Button>
           </Card>
         </div>
       )}
