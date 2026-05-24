@@ -234,10 +234,32 @@ Return ONLY the JSON, no markdown fences.
         )
     text = str(content).strip()
 
-    if text.startswith("```"):
-        text = text.split("```")[1]
-        if text.startswith("json"):
-            text = text[4:]
-        text = text.strip()
+    # Robust JSON extraction: Find the first '{' and last '}'
+    start_idx = text.find('{')
+    end_idx = text.rfind('}')
+    
+    if start_idx != -1 and end_idx != -1 and end_idx > start_idx:
+        json_str = text[start_idx:end_idx + 1]
+    else:
+        # Fallback if no braces found (rare, but protects against crash)
+        json_str = text
+        if json_str.startswith("```"):
+            json_str = json_str.split("```")[1]
+            if json_str.startswith("json"):
+                json_str = json_str[4:]
 
-    return json.loads(text)
+    try:
+        return json.loads(json_str.strip())
+    except json.JSONDecodeError as e:
+        print(f"Failed to parse Gemini feedback JSON: {e}")
+        print(f"Raw text was: {text}")
+        # Return a safe fallback so the frontend doesn't crash
+        return {
+            "overall_score": 0,
+            "technical": {"score": 0, "notes": "Could not parse AI feedback."},
+            "communication": {"score": 0, "notes": ""},
+            "confidence": {"score": 0, "notes": ""},
+            "strengths": [],
+            "improvements": ["The AI generated an invalid report format."],
+            "encouraging_summary": "We had trouble generating your report."
+        }
