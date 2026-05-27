@@ -53,6 +53,8 @@ class FeedbackScore(BaseModel):
 class FeedbackReport(BaseModel):
     interview_id: str
     overall_score: int
+    ats_score: int
+    transcript_analysis: str
     technical: FeedbackScore
     communication: FeedbackScore
     confidence: FeedbackScore

@@ -201,6 +201,8 @@ Evaluate the candidate honestly but ENCOURAGINGLY. Your tone should be:
 Return ONLY this JSON (scores are 0-100):
 {{
   "overall_score": 72,
+  "ats_score": 85,
+  "transcript_analysis": "A detailed 2-3 sentence paragraph summarizing how the conversation went between the candidate and the interviewer. Highlight the candidate's responsiveness, flow of conversation, and overall engagement.",
   "technical": {{
     "score": 75,
     "notes": "Specific observation about technical performance..."
@@ -256,6 +258,8 @@ Return ONLY the JSON, no markdown fences.
         # Return a safe fallback so the frontend doesn't crash
         return {
             "overall_score": 0,
+            "ats_score": 0,
+            "transcript_analysis": "We could not generate the transcript analysis.",
             "technical": {"score": 0, "notes": "Could not parse AI feedback."},
             "communication": {"score": 0, "notes": ""},
             "confidence": {"score": 0, "notes": ""},

@@ -5,7 +5,9 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { LayoutDashboard, Mic, LogOut, TrendingUp, Target, Award, ArrowRight, MessageSquareQuote, Sparkles } from 'lucide-react'
+import { LayoutDashboard, Mic, LogOut, TrendingUp, Target, Award, ArrowRight, MessageSquareQuote, Sparkles, Download } from 'lucide-react'
+import html2canvas from 'html2canvas'
+import jsPDF from 'jspdf'
 
 interface Interview { interview_id: string; role: string; overall_score: number; created_at: string; feedback?: any }
 
@@ -28,6 +30,18 @@ export default function Dashboard({ user }: { user: any }) {
 
   const getScoreColor = (s: number) => s >= 80 ? 'text-green-500' : s >= 60 ? 'text-amber-500' : 'text-red-500'
   const getProgressColor = (s: number) => s >= 80 ? 'bg-green-500' : s >= 60 ? 'bg-amber-500' : 'bg-red-500'
+
+  const downloadReport = async () => {
+    const element = document.getElementById('report-content')
+    if (!element) return
+    const canvas = await html2canvas(element, { scale: 2, useCORS: true, backgroundColor: '#ffffff' })
+    const imgData = canvas.toDataURL('image/png')
+    const pdf = new jsPDF('p', 'mm', 'a4')
+    const pdfWidth = pdf.internal.pageSize.getWidth()
+    const pdfHeight = (canvas.height * pdfWidth) / canvas.width
+    pdf.addImage(imgData, 'PNG', 0, 0, pdfWidth, pdfHeight)
+    pdf.save(`interview-report-${selected?.role.replace(/\s+/g, '-') || 'download'}.pdf`)
+  }
 
   return (
     <div className="min-h-screen flex bg-background">
@@ -142,21 +156,52 @@ export default function Dashboard({ user }: { user: any }) {
                 <p className="text-muted-foreground font-medium">Select an interview from the list<br/>to view detailed feedback</p>
               </Card>
             ) : (
-              <Card className="overflow-hidden">
+              <Card id="report-content" className="overflow-hidden bg-card">
                 <CardHeader className="bg-muted/30 border-b pb-8">
                   <div className="flex justify-between items-start">
                     <div>
                       <CardTitle className="text-2xl">{selected.role}</CardTitle>
                       <CardDescription>{new Date(selected.created_at).toLocaleDateString()}</CardDescription>
+                      <Button variant="outline" size="sm" className="mt-4" onClick={downloadReport}>
+                        <Download className="w-4 h-4 mr-2" /> Download PDF
+                      </Button>
                     </div>
-                    <div className={`text-5xl font-black tracking-tighter ${getScoreColor(selected.overall_score)}`}>
-                      {selected.overall_score}<span className="text-2xl opacity-70">%</span>
+                    <div className="flex flex-col items-end gap-2">
+                      <div className={`text-5xl font-black tracking-tighter ${getScoreColor(selected.overall_score)}`}>
+                        {selected.overall_score}<span className="text-2xl opacity-70">%</span>
+                      </div>
+                      <div className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Overall Score</div>
                     </div>
                   </div>
                 </CardHeader>
                 <CardContent className="p-6">
                   {selected.feedback ? (
                     <div className="space-y-8">
+                      {/* ATS and Transcript Analysis */}
+                      <div className="grid md:grid-cols-2 gap-6">
+                        {selected.feedback.ats_score !== undefined && (
+                          <div className="p-4 bg-muted/20 border rounded-xl flex items-center justify-between">
+                            <div>
+                              <p className="text-sm font-medium text-muted-foreground uppercase tracking-wider">Resume ATS Score</p>
+                              <p className="text-xs text-muted-foreground mt-1">Based on Job Description</p>
+                            </div>
+                            <div className={`text-3xl font-black ${getScoreColor(selected.feedback.ats_score)}`}>
+                              {selected.feedback.ats_score}%
+                            </div>
+                          </div>
+                        )}
+                        {selected.feedback.transcript_analysis && (
+                          <div className="p-4 bg-primary/5 border border-primary/20 rounded-xl">
+                            <p className="text-sm font-medium text-primary uppercase tracking-wider mb-2">Transcript Analysis</p>
+                            <p className="text-sm text-muted-foreground leading-relaxed">
+                              {selected.feedback.transcript_analysis}
+                            </p>
+                          </div>
+                        )}
+                      </div>
+
+                      <div className="h-px bg-border" />
+
                       {/* Metric Progress Bars */}
                       <div className="space-y-5">
                         {[
