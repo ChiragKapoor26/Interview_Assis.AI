@@ -1,13 +1,208 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { useNavigate } from 'react-router-dom'
+import emailjs from '@emailjs/browser'
 import { supabase } from '../lib/supabase'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import {
   CheckCircle, Code, User, Play, BarChart3, LineChart,
-  FileText, BrainCircuit, Video, Award, ChevronDown
+  FileText, BrainCircuit, Video, Award, ChevronDown,
+  Star, Send, Loader2
 } from 'lucide-react'
+
+/* ─── EmailJS config ─────────────────────────────────────────────── */
+// 1. Sign up free at https://www.emailjs.com
+// 2. Create a service (Gmail) → copy Service ID below
+// 3. Create an email template with variables:
+//    {{from_name}}, {{from_email}}, {{rating}}, {{category}}, {{message}}
+//    Set "To Email" in template to: chirag.gndu05@gmail.com
+// 4. Copy your Public Key from Account → API Keys
+const EMAILJS_SERVICE_ID  = 'service_ajnyw97'   // e.g. 'service_abc123'
+const EMAILJS_TEMPLATE_ID = 'template_kjqu7oq'  // e.g. 'template_xyz789'
+const EMAILJS_PUBLIC_KEY  = '0Yve-am7mudySB0Kv'   // e.g. 'AbCdEfGhIjKlMnOp'
+
+/* ─── Feedback form component ────────────────────────────────────── */
+const CATEGORIES = ['Bug Report', 'Feature Request', 'UX / Design', 'General Feedback', 'Other']
+
+function FeedbackSection() {
+  const [name, setName]         = useState('')
+  const [email, setEmail]       = useState('')
+  const [category, setCategory] = useState(CATEGORIES[3])
+  const [message, setMessage]   = useState('')
+  const [rating, setRating]     = useState(0)
+  const [hovered, setHovered]   = useState(0)
+  const [status, setStatus]     = useState<'idle' | 'sending' | 'success' | 'error'>('idle')
+
+  const handleSubmit = async () => {
+    if (!name.trim() || !email.trim() || !message.trim() || rating === 0) return
+    setStatus('sending')
+    try {
+      await emailjs.send(
+        EMAILJS_SERVICE_ID,
+        EMAILJS_TEMPLATE_ID,
+        {
+          from_name:  name.trim(),
+          from_email: email.trim(),
+          rating:     `${rating} / 5 stars`,
+          category,
+          message:    message.trim(),
+          to_email:   'chirag.gndu05@gmail.com',
+        },
+        EMAILJS_PUBLIC_KEY
+      )
+      setStatus('success')
+      setName(''); setEmail(''); setMessage(''); setRating(0); setCategory(CATEGORIES[3])
+    } catch {
+      setStatus('error')
+    }
+  }
+
+  const inputCls = `w-full rounded-lg border border-border/60 bg-background/60 px-4 py-3 text-sm
+    placeholder:text-muted-foreground/50 focus:outline-none focus:ring-2 focus:ring-primary/50
+    focus:border-primary/60 transition-all duration-200`
+
+  return (
+    <section className="container mx-auto px-4 mb-32 max-w-2xl">
+      <Reveal className="text-center mb-12">
+        <Badge variant="secondary" className="mb-4 py-1 px-3 rounded-full">
+          <span className="w-2 h-2 rounded-full bg-primary mr-2" />
+          We're Listening
+        </Badge>
+        <h2 className="text-3xl font-bold mb-4">Share Your Feedback</h2>
+        <p className="text-muted-foreground">
+          Found a bug, have a feature idea, or just want to say hi? We read every message.
+        </p>
+      </Reveal>
+
+      <Reveal delay={100}>
+        <TiltCard>
+          <Card className="bg-card/50 backdrop-blur-sm border border-border/50 border-t-2 border-t-primary/60">
+            <CardContent className="pt-8 pb-8 px-8 space-y-6">
+
+              {/* Star rating */}
+              <div>
+                <p className="text-sm font-medium mb-3 text-muted-foreground">How would you rate InterviewAI?</p>
+                <div className="flex gap-1">
+                  {[1, 2, 3, 4, 5].map((star) => (
+                    <button
+                      key={star}
+                      onClick={() => setRating(star)}
+                      onMouseEnter={() => setHovered(star)}
+                      onMouseLeave={() => setHovered(0)}
+                      className="transition-transform duration-100 hover:scale-110 focus:outline-none"
+                      aria-label={`Rate ${star} star`}
+                    >
+                      <Star
+                        className={`w-8 h-8 transition-colors duration-150 ${
+                          star <= (hovered || rating)
+                            ? 'text-yellow-400 fill-yellow-400'
+                            : 'text-muted-foreground/30'
+                        }`}
+                      />
+                    </button>
+                  ))}
+                  {rating > 0 && (
+                    <span className="ml-3 text-sm text-muted-foreground self-center">
+                      {['', 'Poor', 'Fair', 'Good', 'Great', 'Excellent!'][rating]}
+                    </span>
+                  )}
+                </div>
+              </div>
+
+              {/* Name + Email */}
+              <div className="grid sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">Your Name</label>
+                  <input
+                    className={inputCls}
+                    placeholder="Jane Doe"
+                    value={name}
+                    onChange={e => setName(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="text-sm font-medium mb-1.5 block">Email Address</label>
+                  <input
+                    className={inputCls}
+                    type="email"
+                    placeholder="jane@example.com"
+                    value={email}
+                    onChange={e => setEmail(e.target.value)}
+                  />
+                </div>
+              </div>
+
+              {/* Category pills */}
+              <div>
+                <label className="text-sm font-medium mb-2 block">Category</label>
+                <div className="flex flex-wrap gap-2">
+                  {CATEGORIES.map(cat => (
+                    <button
+                      key={cat}
+                      onClick={() => setCategory(cat)}
+                      className={`px-3 py-1.5 rounded-full text-xs font-medium border transition-all duration-150 focus:outline-none
+                        ${category === cat
+                          ? 'bg-primary text-primary-foreground border-primary'
+                          : 'bg-background/40 border-border/50 text-muted-foreground hover:border-primary/50 hover:text-foreground'
+                        }`}
+                    >
+                      {cat}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Message */}
+              <div>
+                <label className="text-sm font-medium mb-1.5 block">Your Message</label>
+                <textarea
+                  className={`${inputCls} resize-none`}
+                  rows={4}
+                  placeholder="Tell us what you think, what could be better, or what you'd love to see..."
+                  value={message}
+                  onChange={e => setMessage(e.target.value)}
+                />
+              </div>
+
+              {/* Submit */}
+              <div className="flex items-center justify-between pt-2">
+                <p className="text-xs text-muted-foreground">
+                  Sent directly to <span className="text-primary">chirag.gndu05@gmail.com</span>
+                </p>
+                <Button
+                  onClick={handleSubmit}
+                  disabled={status === 'sending' || !name || !email || !message || rating === 0}
+                  className="gap-2 min-w-[130px]"
+                >
+                  {status === 'sending' ? (
+                    <><Loader2 className="w-4 h-4 animate-spin" /> Sending…</>
+                  ) : (
+                    <><Send className="w-4 h-4" /> Send Feedback</>
+                  )}
+                </Button>
+              </div>
+
+              {/* Status messages */}
+              {status === 'success' && (
+                <div className="rounded-lg bg-green-500/10 border border-green-500/30 px-4 py-3 text-sm text-green-400 flex items-center gap-2">
+                  <CheckCircle className="w-4 h-4 shrink-0" />
+                  Thanks for your feedback! We'll review it shortly.
+                </div>
+              )}
+              {status === 'error' && (
+                <div className="rounded-lg bg-red-500/10 border border-red-500/30 px-4 py-3 text-sm text-red-400">
+                  Something went wrong. Please try again or email us directly at chirag.gndu05@gmail.com
+                </div>
+              )}
+
+            </CardContent>
+          </Card>
+        </TiltCard>
+      </Reveal>
+    </section>
+  )
+}
 
 /* ─── Scroll-reveal hook ─────────────────────────────────────────── */
 function useScrollReveal(threshold = 0.15) {
@@ -297,6 +492,9 @@ export default function LandingPage({ user }: { user: any }) {
             </Button>
           </Reveal>
         </section>
+
+        {/* ── Feedback ── */}
+        <FeedbackSection />
 
         {/* ── FAQs ── */}
         <section className="container mx-auto px-4 mb-32 max-w-3xl">
