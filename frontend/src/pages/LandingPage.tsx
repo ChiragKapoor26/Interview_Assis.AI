@@ -18,9 +18,9 @@ import {
 //    {{from_name}}, {{from_email}}, {{rating}}, {{category}}, {{message}}
 //    Set "To Email" in template to: chirag.gndu05@gmail.com
 // 4. Copy your Public Key from Account → API Keys
-const EMAILJS_SERVICE_ID  = 'service_ajnyw97'   // e.g. 'service_abc123'
-const EMAILJS_TEMPLATE_ID = 'template_kjqu7oq'  // e.g. 'template_xyz789'
-const EMAILJS_PUBLIC_KEY  = '0Yve-am7mudySB0Kv'   // e.g. 'AbCdEfGhIjKlMnOp'
+const EMAILJS_SERVICE_ID  = 'service_ajnyw97'
+const EMAILJS_TEMPLATE_ID = 'template_kjqu7oq'
+const EMAILJS_PUBLIC_KEY  = '0Yve-am7mudySB0Kv'
 
 /* ─── Feedback form component ────────────────────────────────────── */
 const CATEGORIES = ['Bug Report', 'Feature Request', 'UX / Design', 'General Feedback', 'Other']

@@ -5,7 +5,7 @@ import { LineChart, Line, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContai
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Progress } from '@/components/ui/progress'
-import { LayoutDashboard, Mic, LogOut, TrendingUp, Target, Award, ArrowRight, MessageSquareQuote, Sparkles, Download } from 'lucide-react'
+import { LayoutDashboard, Mic, LogOut, TrendingUp, Target, Award, ArrowRight, MessageSquareQuote, Sparkles, Download, Map, BookOpen } from 'lucide-react'
 import html2canvas from 'html2canvas'
 import jsPDF from 'jspdf'
 
@@ -245,6 +245,37 @@ export default function Dashboard({ user }: { user: any }) {
                           </div>
                         )}
                       </div>
+                      {/* Actionable Roadmap */}
+                      {selected.feedback.roadmap?.length > 0 && (
+                        <>
+                          <div className="h-px bg-border my-6" />
+                          <div>
+                            <h4 className="text-sm font-bold text-blue-400 uppercase tracking-wider mb-4 flex items-center gap-2">
+                              <Map className="w-4 h-4"/> Actionable Roadmap
+                            </h4>
+                            <div className="space-y-4">
+                              {selected.feedback.roadmap.map((step: any, index: number) => (
+                                <div key={index} className="flex gap-4 p-4 rounded-xl border bg-muted/10 relative overflow-hidden">
+                                  <div className="absolute top-0 left-0 w-1 h-full bg-blue-500/50" />
+                                  <div className="flex-shrink-0 w-8 h-8 rounded-full bg-blue-500/10 flex items-center justify-center text-blue-400 font-bold text-sm">
+                                    {index + 1}
+                                  </div>
+                                  <div>
+                                    <h5 className="font-semibold text-foreground">{step.topic}</h5>
+                                    <p className="text-sm text-muted-foreground mt-1 leading-relaxed">{step.description}</p>
+                                    {step.resource_hint && (
+                                      <div className="mt-3 inline-flex items-center gap-1.5 text-xs font-medium text-blue-400 bg-blue-500/10 px-2.5 py-1 rounded-md">
+                                        <BookOpen className="w-3.5 h-3.5" />
+                                        {step.resource_hint}
+                                      </div>
+                                    )}
+                                  </div>
+                                </div>
+                              ))}
+                            </div>
+                          </div>
+                        </>
+                      )}
 
                       {selected.feedback.encouraging_summary && (
                         <div className="mt-8 p-4 bg-primary/10 border border-primary/20 rounded-lg flex gap-3 text-primary-foreground/90 italic">

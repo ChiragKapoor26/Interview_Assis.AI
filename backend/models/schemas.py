@@ -50,6 +50,11 @@ class FeedbackScore(BaseModel):
     notes: str
 
 
+class RoadmapStep(BaseModel):
+    topic: str
+    description: str
+    resource_hint: str
+
 class FeedbackReport(BaseModel):
     interview_id: str
     overall_score: int
@@ -60,6 +65,7 @@ class FeedbackReport(BaseModel):
     confidence: FeedbackScore
     improvements: List[str]
     strengths: List[str]
+    roadmap: List[RoadmapStep] = []
     created_at: Optional[str] = None
 
 

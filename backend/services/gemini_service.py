@@ -223,6 +223,18 @@ Return ONLY this JSON (scores are 0-100):
     "Specific, actionable improvement with how to practice it",
     "Another improvement"
   ],
+  "roadmap": [
+    {{
+      "topic": "System Design Basics",
+      "description": "Start by studying consistent hashing and load balancing based on your struggle with the scaling question.",
+      "resource_hint": "Read 'Designing Data-Intensive Applications' Chapter 5 or similar resources."
+    }},
+    {{
+      "topic": "Behavioral STAR Method",
+      "description": "Structure your past experiences using Situation, Task, Action, Result to be more concise.",
+      "resource_hint": "Practice 3 common stories using STAR."
+    }}
+  ],
   "encouraging_summary": "2-3 sentence warm, personal closing message to the candidate"
 }}
 
