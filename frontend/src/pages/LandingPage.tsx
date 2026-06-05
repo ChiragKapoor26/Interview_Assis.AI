@@ -11,7 +11,6 @@ import {
   Star, Send, Loader2
 } from 'lucide-react'
 
-/* ─── EmailJS config ─────────────────────────────────────────────── */
 // 1. Sign up free at https://www.emailjs.com
 // 2. Create a service (Gmail) → copy Service ID below
 // 3. Create an email template with variables:
